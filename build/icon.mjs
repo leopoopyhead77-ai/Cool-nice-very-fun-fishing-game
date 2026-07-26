@@ -1,5 +1,5 @@
-// Renders the launcher icon at every density. The mark is a sounder trace:
-// an amber lure line above a seabed, drawn in the game's own palette.
+// Renders the launcher icon at every density: a float sitting on the lake at
+// first light, drawn from the game's own palette.
 import { chromium } from "playwright";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -17,22 +17,30 @@ const SIZES = {
 
 const svg = (s) => `<svg xmlns="http://www.w3.org/2000/svg" width="${s}" height="${s}" viewBox="0 0 192 192">
   <defs>
-    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#123047"/>
-      <stop offset="1" stop-color="#04080d"/>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#BFE0EC"/>
+      <stop offset="1" stop-color="#F3E7C8"/>
     </linearGradient>
+    <linearGradient id="lake" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7FB8AE"/>
+      <stop offset="1" stop-color="#2F6E66"/>
+    </linearGradient>
+    <clipPath id="frame"><rect width="192" height="192" rx="38"/></clipPath>
   </defs>
-  <rect width="192" height="192" rx="34" fill="url(#water)"/>
-  <g opacity=".28" stroke="#8fb6c8" stroke-width="2">
-    <path d="M20 60h152M20 96h152M20 132h152"/>
+  <g clip-path="url(#frame)">
+    <rect width="192" height="192" fill="url(#sky)"/>
+    <circle cx="138" cy="52" r="26" fill="#FFF0B8"/>
+    <path d="M0 108c22-16 40 2 62-4s34-20 58-14 46 14 72 6v20H0z" fill="#6FA45E"/>
+    <path d="M0 118c26-10 44 6 68 0s36-16 60-10 42 12 64 6v18H0z" fill="#4F8A55"/>
+    <rect y="124" width="192" height="68" fill="url(#lake)"/>
+    <g stroke="rgba(255,255,255,.5)" stroke-width="3.5" stroke-linecap="round" fill="none">
+      <path d="M14 142h44M108 138h58M28 160h50M118 164h44M64 178h62"/>
+    </g>
+    <path d="M96 126L150 74" stroke="#FDFBF5" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="96" cy="134" r="15" fill="#FDFBF5"/>
+    <path d="M81 134a15 15 0 0 1 30 0z" fill="#E8503C"/>
+    <rect x="93" y="112" width="6" height="12" rx="3" fill="#33403A"/>
   </g>
-  <path d="M20 148c18-10 30 4 46-2s24-18 42-14 26 16 44 10 20-6 20-6v42H20z" fill="#1d5c72"/>
-  <path d="M20 148c18-10 30 4 46-2s24-18 42-14 26 16 44 10 20-6 20-6" fill="none"
-        stroke="#2FA8CC" stroke-width="5" stroke-linecap="round"/>
-  <path d="M96 24v54" stroke="#F0A63C" stroke-width="5" stroke-linecap="round"/>
-  <circle cx="96" cy="90" r="13" fill="#F0A63C"/>
-  <circle cx="96" cy="90" r="25" fill="none" stroke="#F0A63C" stroke-width="3" opacity=".55"/>
-  <circle cx="96" cy="90" r="37" fill="none" stroke="#F0A63C" stroke-width="2" opacity=".25"/>
 </svg>`;
 
 const browser = await chromium.launch({

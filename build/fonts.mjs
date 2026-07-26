@@ -1,10 +1,10 @@
-// Downloads the latin subsets of the two display faces and emits base64 @font-face CSS.
+// Downloads the latin subsets of the two faces and emits base64 @font-face CSS.
 import { writeFileSync } from "node:fs";
 
 const UA =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36";
 const API =
-  "https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap";
+  "https://fonts.googleapis.com/css2?family=Fredoka:wght@600&family=Nunito:wght@400;700&display=swap";
 
 const css = await (await fetch(API, { headers: { "User-Agent": UA } })).text();
 

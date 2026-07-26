@@ -2,9 +2,15 @@
 // (window.AndroidStore) rather than localStorage, using the exact HTML that
 // ships inside the APK.
 import { chromium } from "playwright";
+import { copyFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+// Stage the current bundle exactly as apk.sh does, so this always exercises
+// what would ship rather than whatever the last APK build left behind.
+mkdirSync(resolve(root, "android/assets"), { recursive: true });
+copyFileSync(resolve(root, "dist/index.html"), resolve(root, "android/assets/index.html"));
 
 const b = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" });
 const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
@@ -68,8 +74,7 @@ if (label !== "device storage") throw new Error("storage label wrong: " + label)
 // A relaunch must restore from the bridge.
 await p.reload();
 await p.waitForSelector(".action-main");
-const restored = await p.evaluate(() => document.querySelector(".readout .v:last-child")?.textContent);
-await p.locator('.tab:has-text("Hold")').click();
+await p.locator('.tab:has-text("Bucket")').click();
 const items = await p.locator(".item").count();
 if (items !== parsed.inventory.length) throw new Error(`restore mismatch: ${items} vs ${parsed.inventory.length}`);
 console.log(`  relaunch restored ${items} fish from the bridge`);

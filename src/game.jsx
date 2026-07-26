@@ -51,9 +51,10 @@ import {
   upgradeCost,
   twinChance,
 } from "./engine.js";
+import { drawScene } from "./scene.js";
 import { clearSave, loadSave, storageLabel, writeSave } from "./storage.js";
 
-// --- shared mutable frame state (read by the sounder, written by the loop) --
+// --- shared mutable frame state (read by the scene, written by the loop) ---
 const live = {
   phase: "idle",
   blip: 0.5,
@@ -61,7 +62,7 @@ const live = {
   width: 0.2,
   fill: 0,
   tier: 0,
-  hooked: false,
+  rarityColor: "#2F3B36",
 };
 
 const rgba = (hex, a) => {
@@ -70,12 +71,11 @@ const rgba = (hex, a) => {
 };
 
 // ===========================================================================
-// Echo sounder — a scrolling depth trace that doubles as the game's ambience.
+// The view from the bank — a painted, gently animated scene per area.
 // ===========================================================================
 
-function Sounder({ area, status, depth }) {
+function Scene({ area, status, when }) {
   const ref = useRef(null);
-  const stateRef = useRef({ x: 0, bed: 0.72, seed: Math.random() * 1000 });
   const areaRef = useRef(area);
   areaRef.current = area;
 
@@ -83,94 +83,34 @@ function Sounder({ area, status, depth }) {
     const cv = ref.current;
     if (!cv) return;
     const ctx = cv.getContext("2d");
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     let raf = 0;
     let last = 0;
     let w = 0;
     let h = 0;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-
-    let step = Math.max(1, Math.round(dpr));
-
-    // Paints one column of trace at x. `history` mode skips the live markers so
-    // a freshly-sized canvas can be backfilled with plausible past readings.
-    const column = (x, history) => {
-      const s = stateRef.current;
-      const pal = areaRef.current.palette;
-
-      const g = ctx.createLinearGradient(0, 0, 0, h);
-      g.addColorStop(0, rgba(pal.mid, 0.55));
-      g.addColorStop(0.55, rgba(pal.deep, 0.9));
-      g.addColorStop(1, "#02060a");
-      ctx.fillStyle = g;
-      ctx.fillRect(x, 0, step, h);
-
-      // depth graticule
-      ctx.fillStyle = "rgba(150,190,210,.10)";
-      for (let i = 1; i < 4; i++) ctx.fillRect(x, Math.round((h * i) / 4), step, 1);
-
-      // seabed: two sines plus a slow wander
-      s.seed += 0.02;
-      s.bed = 0.76 + Math.sin(s.seed * 0.7) * 0.07 + Math.sin(s.seed * 2.3) * 0.03;
-      const bedY = Math.round(s.bed * h);
-      ctx.fillStyle = pal.mid;
-      ctx.fillRect(x, bedY, step, h - bedY);
-      ctx.fillStyle = pal.accent;
-      ctx.fillRect(x, bedY - dpr, step, Math.max(2, dpr * 2));
-      ctx.fillStyle = rgba(pal.accent, 0.22);
-      ctx.fillRect(x, bedY - dpr * 5, step, dpr * 4);
-
-      // suspended scatter in the water column
-      if (Math.random() < 0.55) {
-        ctx.fillStyle = rgba(pal.accent, 0.2);
-        ctx.fillRect(x, Math.random() * bedY, step, dpr);
-      }
-
-      const onLine =
-        !history &&
-        (live.phase === "waiting" || live.phase === "bite" || live.phase === "reeling");
-      if (onLine) {
-        ctx.fillStyle = "#f0a63c";
-        ctx.fillRect(x, h * 0.26, step, Math.max(2, dpr * 2));
-      }
-      if (!history && (live.phase === "bite" || live.phase === "reeling")) {
-        const r = RARITIES[live.tier];
-        const y = h * (0.34 + live.blip * 0.36);
-        ctx.fillStyle = rgba(r.color, 0.3);
-        ctx.fillRect(x, y - dpr * 4, step, dpr * 11);
-        ctx.fillStyle = r.color;
-        ctx.fillRect(x, y, step, Math.max(3, dpr * 3));
-      } else if (Math.random() < 0.05) {
-        // idle traffic: something down there, unidentified
-        ctx.fillStyle = "rgba(143,163,176,.55)";
-        ctx.fillRect(x, h * (0.3 + Math.random() * 0.42), step, dpr * 2);
-      }
-    };
 
     const resize = () => {
       const rect = cv.getBoundingClientRect();
       const nw = Math.max(1, Math.round(rect.width * dpr));
       const nh = Math.max(1, Math.round(rect.height * dpr));
       if (cv.width === nw && cv.height === nh) return;
-      cv.width = w = nw;
-      cv.height = h = nh;
-      step = Math.max(1, Math.round(dpr));
-      ctx.fillStyle = "#02060a";
-      ctx.fillRect(0, 0, w, h);
-      // backfill: the sounder has been running since before you arrived
-      for (let x = 0; x < w; x += step) column(x, true);
+      cv.width = nw;
+      cv.height = nh;
+      w = nw;
+      h = nh;
     };
     resize();
     const ro = new ResizeObserver(resize);
     ro.observe(cv);
 
-    const frame = (t) => {
+    const start = performance.now();
+    const frame = (now) => {
       raf = requestAnimationFrame(frame);
-      if (t - last < 33) return; // ~30 fps is plenty for a paper trace
-      last = t;
-      ctx.globalCompositeOperation = "copy";
-      ctx.drawImage(cv, -step, 0);
-      ctx.globalCompositeOperation = "source-over";
-      column(w - step, false);
+      if (now - last < 33) return; // 30 fps keeps phones cool
+      last = now;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(dpr, dpr);
+      drawScene(ctx, w / dpr, h / dpr, areaRef.current.scene, (now - start) / 1000, live);
     };
     raf = requestAnimationFrame(frame);
     return () => {
@@ -180,17 +120,14 @@ function Sounder({ area, status, depth }) {
   }, []);
 
   return (
-    <div className="sounder">
+    <div className="scene">
       <canvas ref={ref} aria-hidden="true" />
-      <div className="sounder-hud">
-        <div className="row">
-          <span>{area.name.toUpperCase()}</span>
-          <span>{depth}</span>
-        </div>
-        <div className="row">
-          <span className="sounder-status">{status}</span>
-          <span>50 kHz · CHIRP</span>
-        </div>
+      <div className="scene-hud">
+        <span className="scene-place">{area.name}</span>
+      </div>
+      <div className="scene-foot">
+        <span className="scene-status">{status}</span>
+        <span className="scene-when">{when}</span>
       </div>
     </div>
   );
@@ -263,35 +200,32 @@ function FishTab({ state, phase, result, castInfo, refs, recent }) {
   const bait = baitOf(state);
 
   const statusText = {
-    idle: "Standby",
-    casting: "Ranging",
-    waiting: "Bait deployed",
-    bite: "Contact",
-    reeling: "Line loaded",
-    result: "Aboard",
-    escaped: "Line slack",
+    idle: "Nice and quiet",
+    casting: "Winding up",
+    waiting: "Line's in the water",
+    bite: "Something's biting!",
+    reeling: "Fish on!",
+    result: "In the bucket",
+    escaped: "It got away",
   }[phase];
 
-  const depthLabel =
-    area.depth[0] === area.depth[1]
-      ? `${area.depth[0]} m`
-      : `${area.depth[0]}–${area.depth[1]} m`;
+
 
   return (
     <>
-      <Sounder area={area} status={statusText} depth={depthLabel} />
+      <Scene area={area} status={statusText} when={area.when} />
 
       <Readout
         cells={[
           { k: "Rod", v: rod.short },
           { k: "Bait", v: bait ? `${bait.name.split(" ")[0]} ×${state.baits[bait.key] || 0}` : "None" },
           { k: "Luck", v: fmt(Math.round(baseLuck(state))) },
-          { k: "Hold", v: `${state.inventory.length}/${INVENTORY_CAP}` },
+          { k: "Bucket", v: `${state.inventory.length}/${INVENTORY_CAP}` },
         ]}
       />
 
       {phase === "casting" && (
-        <Panel title="Cast" note="Tap SET on the mark">
+        <Panel title="Cast" note="tap SET on the green">
           <div className="track" ref={refs.castTrack}>
             <div
               className="sweet"
@@ -310,24 +244,27 @@ function FishTab({ state, phase, result, castInfo, refs, recent }) {
             <div className="marker" ref={refs.marker} style={{ left: "0%" }} />
           </div>
           <p className="note">
-            Power builds left to right. The amber band is your line — the bright core is a
-            perfect drop.
+            Power builds left to right. Stop inside the green band; the bright middle is a
+            perfect cast.
           </p>
         </Panel>
       )}
 
       {(phase === "waiting" || phase === "bite") && (
-        <Panel title="Line" note={castInfo ? CAST_LABEL[castInfo.quality] : ""}>
+        <Panel
+          title={phase === "waiting" ? "Waiting" : "Bite!"}
+          note={castInfo ? CAST_LABEL[castInfo.quality] : ""}
+        >
           <p className="note">
             {phase === "waiting"
-              ? "Bait is down. Watch the trace — something rising means something interested."
-              : "Contact. Set the hook."}
+              ? "Float's out. Watch it — when it dips, you have about a second."
+              : "It's taken the bait. Set the hook!"}
           </p>
         </Panel>
       )}
 
       {phase === "reeling" && (
-        <Panel title="Reel" note="Hold to gain, release to fall back">
+        <Panel title="Reeling" note="hold to move right, let go to drift back">
           <div className="track" ref={refs.reelTrack}>
             <div className="bracket" ref={refs.bracket} />
             <div className="blip" ref={refs.blip} />
@@ -342,15 +279,40 @@ function FishTab({ state, phase, result, castInfo, refs, recent }) {
       {phase === "result" && result && <ResultCard result={result} />}
 
       {phase === "escaped" && (
-        <Panel title="Lost">
+        <Panel title="It got away">
           <p className="note" style={{ color: "var(--alert)", fontSize: "12px" }}>
             {result?.reason || "The line went slack."}
           </p>
         </Panel>
       )}
 
+      {state.stats.catches < 3 && (
+        <Panel title="How to fish" note="you'll get the hang of it">
+          <div className="steps">
+            <div>
+              <b>1</b>
+              <span>Tap <em>Cast</em>, then <em>Set</em> when the marker is on the green.</span>
+            </div>
+            <div>
+              <b>2</b>
+              <span>Watch the float. When it dips, tap <em>Hook</em> straight away.</span>
+            </div>
+            <div>
+              <b>3</b>
+              <span>Hold to move your bracket right, let go to drift left. Keep the fish
+              inside it until the bar fills.</span>
+            </div>
+            <div>
+              <b>4</b>
+              <span>Sell what you catch in the <em>Bucket</em>, then buy a better rod in
+              the <em>Shop</em>.</span>
+            </div>
+          </div>
+        </Panel>
+      )}
+
       {recent.length > 0 && (
-        <Panel title="Trip log" note={`last ${recent.length}`}>
+        <Panel title="Just caught" note={`last ${recent.length}`}>
           <div className="list">
             {recent.map((e) => {
               const r = rarityOf(e.tier);
@@ -372,10 +334,10 @@ function FishTab({ state, phase, result, castInfo, refs, recent }) {
         </Panel>
       )}
 
-      <Panel title="Water" note={area.sub}>
+      <Panel title="This spot" note={area.sub}>
           <p className="note">
-            {area.name} holds {area.fish.length} recorded species. Better bait and a
-            luckier rod push the roll toward the deep end of that list.
+            {area.fish.length} kinds of fish live here. Better bait and a luckier rod tip
+            the odds toward the rare end of the list.
           </p>
           <div className="grid2">
             {RARITIES.map((r, i) =>
@@ -423,8 +385,7 @@ function ResultCard({ result }) {
             className="result"
             style={{
               "--rar": r.color,
-              "--rar-glow": r.glow,
-              "--rar-wash": rgba(r.color, 0.09),
+              "--rar-wash": r.soft,
             }}
           >
             <div className="kv">
@@ -475,7 +436,7 @@ function InventoryTab({ state, api }) {
 
   return (
     <>
-      <Panel title="Hold" note={`${inv.length}/${INVENTORY_CAP}`}>
+      <Panel title="Bucket" note={`${inv.length}/${INVENTORY_CAP}`}>
         <div className="kv">
           <span>TOTAL VALUE</span>
           <b style={{ color: "var(--amber)", fontSize: "15px" }}>{fmt(total)}</b>
@@ -486,7 +447,7 @@ function InventoryTab({ state, api }) {
           </button>
         </div>
         <div className="hr" />
-        <span className="strip-label">Dump everything below</span>
+        <span className="strip-label">Sell everything below</span>
         <div className="grid2">
           {RARITIES.slice(1).map((r, i) => {
             const tier = i + 1;
@@ -529,9 +490,9 @@ function InventoryTab({ state, api }) {
         })}
         {!inv.length && (
           <p className="empty">
-            Hold is empty.
+            Your bucket is empty.
             <br />
-            Everything you land stacks here until you sell it.
+            Everything you catch waits here until you sell it.
           </p>
         )}
       </div>
@@ -712,11 +673,11 @@ function AreaShop({ state, api }) {
                 </b>
                 {here ? (
                   <span className="chip" style={{ color: "var(--amber)" }}>
-                    Fishing here
+                    You are here
                   </span>
                 ) : unlocked ? (
                   <span className="chip" style={{ color: "var(--good)" }}>
-                    Charted
+                    Unlocked
                   </span>
                 ) : (
                   <span className="price">{fmt(area.cost)}</span>
@@ -744,7 +705,7 @@ function AreaShop({ state, api }) {
                   </button>
                 ) : (
                   <button className="btn primary" disabled={!afford} onClick={() => api.unlockArea(i)}>
-                    Chart · {fmt(area.cost)}
+                    Unlock · {fmt(area.cost)}
                   </button>
                 ))}
             </div>
@@ -764,7 +725,7 @@ function BestiaryTab({ state }) {
   const found = Object.keys(state.bestiary).length;
   return (
     <>
-      <Panel title="Bestiary" note={`${found}/${total} recorded`}>
+      <Panel title="Journal" note={`${found}/${total} found`}>
         <div className="bar-mini">
           <i style={{ width: `${(found / total) * 100}%` }} />
         </div>
@@ -773,13 +734,13 @@ function BestiaryTab({ state }) {
           <b>{fmt(state.stats.casts)}</b>
         </div>
         <div className="kv">
-          <span>LANDED / LOST</span>
+          <span>CAUGHT / LOST</span>
           <b>
             {fmt(state.stats.catches)} / {fmt(state.stats.escapes)}
           </b>
         </div>
         <div className="kv">
-          <span>LIFETIME EARNINGS</span>
+          <span>TOTAL EARNED</span>
           <b style={{ color: "var(--amber)" }}>{fmt(state.stats.earned)}</b>
         </div>
         <div className="kv">
@@ -811,7 +772,7 @@ function BestiaryTab({ state }) {
                       <div className="meta">
                         {rec
                           ? `caught ${fmt(rec.count)} · best ${fmtKg(rec.best)}`
-                          : `${r.name} · ${fmtKg(f.wmin)}–${fmtKg(f.wmax)} · unrecorded`}
+                          : `${r.name} · ${fmtKg(f.wmin)}–${fmtKg(f.wmax)} · not caught yet`}
                       </div>
                     </div>
                     <span className="price" style={{ color: rec ? "var(--amber)" : "var(--faint)" }}>
@@ -860,8 +821,8 @@ function RebirthTab({ state, api }) {
           <b>×{(1 + (state.rebirths + 1) * 0.3).toFixed(2)}</b>
         </div>
         <p className="note">
-          Resetting spends your coins and every rod but the Twine. Charted water, the
-          bestiary and all token upgrades survive.
+          Starting over spends your coins and every rod but the Bamboo. Your unlocked
+          spots, your journal and all token upgrades stay with you.
         </p>
         {confirming ? (
           <div className="btn-row">
@@ -931,10 +892,10 @@ function RebirthTab({ state, api }) {
         </div>
       </Panel>
 
-      <Panel title="Console" note={storageLabel()}>
+      <Panel title="Save" note={storageLabel()}>
         <p className="note">
-          Progress saves automatically after every action. A reset wipes coins, gear,
-          charts, tokens and the bestiary — there is no undo.
+          The game saves itself after everything you do. A reset wipes coins, gear,
+          spots, tokens and your journal — there is no undo.
         </p>
         {resetting ? (
           <div className="btn-row">
@@ -961,9 +922,9 @@ function RebirthTab({ state, api }) {
 
 const TABS = [
   { key: "fish", label: "Fish" },
-  { key: "hold", label: "Hold" },
+  { key: "hold", label: "Bucket" },
   { key: "shop", label: "Shop" },
-  { key: "log", label: "Log" },
+  { key: "log", label: "Journal" },
   { key: "rebirth", label: "Rebirth" },
 ];
 
@@ -1085,7 +1046,7 @@ function App() {
         mut((s) => {
           const rod = RODS.find((r) => r.key === key);
           if (!rod || s.rodsOwned.includes(key) || s.coins < rod.cost) return s;
-          say(`${rod.name} rigged and ready`);
+          say(`${rod.name} — ready to go`);
           return {
             ...s,
             coins: s.coins - rod.cost,
@@ -1113,7 +1074,7 @@ function App() {
           const area = AREAS[i];
           if (s.areasUnlocked.includes(area.key)) return s;
           if (s.coins < area.cost || s.rebirths < area.rebirth) return s;
-          say(`${area.name} charted`);
+          say(`${area.name} unlocked!`);
           return {
             ...s,
             coins: s.coins - area.cost,
@@ -1124,7 +1085,7 @@ function App() {
       travel: (i) =>
         mut((s) => {
           if (!s.areasUnlocked.includes(AREAS[i].key)) return s;
-          say(`Underway to ${AREAS[i].name}`);
+          say(`Off to ${AREAS[i].name}`);
           return { ...s, area: i };
         }),
       buyUpgrade: (key) =>
@@ -1162,7 +1123,7 @@ function App() {
         setPhase("idle");
         setResult(null);
         setTab("fish");
-        say("Console wiped");
+        say("Fresh start");
       },
     };
   }, [say]);
@@ -1188,9 +1149,9 @@ function App() {
       entries.forEach((e, i) => {
         const prevRec = bestiary[e.name];
         extra[i] = !prevRec
-          ? "New species logged."
+          ? "New fish for the journal!"
           : e.weight > prevRec.best
-          ? `Personal best — was ${fmtKg(prevRec.best)}.`
+          ? `Your biggest yet — old record ${fmtKg(prevRec.best)}.`
           : "";
         bestiary = recordBestiary(bestiary, e);
         best = Math.max(best, e.value);
@@ -1199,7 +1160,7 @@ function App() {
         } else {
           coins += e.value;
           earned += e.value;
-          extra[i] = (extra[i] ? extra[i] + " " : "") + "Hold full — sold on the spot.";
+          extra[i] = (extra[i] ? extra[i] + " " : "") + "Bucket full — sold it right away.";
         }
       });
       setState((prev) => ({
@@ -1253,6 +1214,7 @@ function App() {
     setPhase("waiting");
     live.phase = "waiting";
     live.tier = run.current.pending.tier;
+    live.rarityColor = RARITIES[run.current.pending.tier].color;
   }, []);
 
   const hook = useCallback(() => {
@@ -1320,7 +1282,7 @@ function App() {
       }
 
       if (p === "bite") {
-        if (now >= r.biteDeadline) escape("It spat the hook. Too slow.");
+        if (now >= r.biteDeadline) escape("Too slow — it spat the hook.");
         return;
       }
 
@@ -1370,7 +1332,6 @@ function App() {
           const rar = RARITIES[r.pending.tier];
           refs.blip.current.style.left = `${r.blip * 100}%`;
           refs.blip.current.style.setProperty("--rar", rar.color);
-          refs.blip.current.style.setProperty("--rar-glow", rar.glow);
         }
         if (refs.meterFill.current) {
           refs.meterFill.current.style.width = `${clamp(r.fill, 0, 1) * 100}%`;
@@ -1383,7 +1344,7 @@ function App() {
           r.fill = 1;
           endCatch(r.pending);
         } else if (r.fill <= 0) {
-          escape("The line went slack. It's gone.");
+          escape("The line went slack. It got away.");
         }
       }
     };
@@ -1391,7 +1352,7 @@ function App() {
     return () => cancelAnimationFrame(raf);
   }, [endCatch, escape]);
 
-  // keep the sounder's idea of the world in sync
+  // keep the scene's idea of the world in sync
   useLayoutEffect(() => {
     live.phase = phase;
   }, [phase]);
@@ -1435,13 +1396,13 @@ function App() {
     phase === "bite" ? "hook" : phase === "reeling" ? "reel" : phase === "casting" ? "cast" : "idle";
 
   const actionText = {
-    idle: ["Cast", "tap to send it out"],
-    casting: ["Set", "stop the marker"],
-    waiting: ["Waiting", "bait is down"],
-    bite: ["Hook!", "now"],
-    reeling: ["Hold", "keep the fish bracketed"],
-    result: ["Cast again", "hold is stocked"],
-    escaped: ["Cast again", "shake it off"],
+    idle: ["Cast", "tap to cast out"],
+    casting: ["Set", "stop it on the green"],
+    waiting: ["Waiting", "watch the float"],
+    bite: ["Hook!", "now!"],
+    reeling: ["Hold", "keep the fish in the bracket"],
+    result: ["Cast again", "nice one"],
+    escaped: ["Cast again", "no worries, try again"],
   }[phase];
 
   const area = areaOf(state);
@@ -1451,7 +1412,7 @@ function App() {
     return (
       <div className="app">
         <div className="well">
-          <p className="empty">Spooling line…</p>
+          <p className="empty">Getting the boat ready…</p>
         </div>
       </div>
     );
@@ -1480,7 +1441,7 @@ function App() {
             setShopView("areas");
           }}
         >
-          <span className="strip-label">Water</span>
+          <span className="strip-label">Spot</span>
           <span className="strip-value">{area.name}</span>
         </button>
       </header>
@@ -1507,17 +1468,20 @@ function App() {
       {flashRarity && (
         <div
           className="signal-flash"
-          style={{ "--rar": flashRarity.color, "--rar-glow": flashRarity.glow }}
+          style={{ "--rar": flashRarity.color }}
         >
           <div className="signal-word">
-            {flash.tier >= 6 ? "Anomalous return" : flash.tier >= 5 ? "Massive return" : "Strong return"}
+            {flash.tier >= 6
+              ? "Something incredible!"
+              : flash.tier >= 5
+              ? "Something huge!"
+              : "Something big!"}
           </div>
         </div>
       )}
 
-      {toast && <div className="toast">{toast}</div>}
-
       <footer className="dock">
+        {toast && <div className="toast">{toast}</div>}
         <button
           className="action"
           data-mode={actionMode}

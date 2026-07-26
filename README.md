@@ -1,9 +1,13 @@
 # Sounding Line
 
-A Fisch-style fishing game built as a deep-sea instrument console. Cast on a
-timing bar, set the hook inside a one-second window, fight the fish in a
-momentum-based reel minigame, sell the hold, buy better gear, chart new water,
-rebirth, repeat.
+A chill Fisch-style fishing game. Cast on a timing bar, set the hook inside a
+one-second window, fight the fish in a momentum-based reel minigame, sell your
+bucket, buy better gear, unlock new spots, rebirth, repeat.
+
+Each spot is a painted, gently animated scene drawn procedurally on a canvas —
+a forest pond at first light, a midday beach, a mountain lake, a coral lagoon, a
+marsh full of fireflies at dusk, a jungle waterfall in warm rain, and a polar
+fjord under the aurora.
 
 Ships two ways from one codebase:
 
@@ -19,32 +23,43 @@ allow installs from your file manager or browser the first time, since the app i
 signed with its own key rather than distributed through Play.
 
 - Package `com.soundingline.fishing`, minSdk 24, targetSdk 34, portrait, offline.
-- The APK is ~172 KB and asks for no permissions at all.
+- The APK is ~200 KB and asks for no permissions at all.
 
 ## Play
 
 | | |
 |---|---|
-| **Cast** | A marker sweeps the power bar. Tap SET on the amber band — the bright core is a perfect drop, worth a luck bonus on that catch. |
-| **Hook** | About a second after the bite. Miss it and the fish spits the hook. |
+| **Cast** | A marker sweeps the power bar. Tap SET on the green band — the bright middle is a perfect cast, worth a luck bonus on that catch. |
+| **Hook** | The float dips about a second before the fish spits it. Tap then. |
 | **Reel** | Hold to drive your bracket right, release to let it fall back. It has momentum, so it overshoots. Keep the fish inside the bracket to fill the bar; the bar drains while it's outside. |
-| **Sell** | The Hold tab sells one fish, everything, or everything below a rarity you pick. |
+| **Sell** | The Bucket tab sells one fish, everything, or everything below a rarity you pick. |
 
 Rarer fish move faster, jitter harder and drain the bar quicker. Better rods
-widen the bracket. When something big takes the bait, the console flashes before
+widen the bracket. When something big takes the bait, the screen tells you before
 you hook it.
 
 ## Systems
 
-- **7 areas**, 12 named species each (84 total), own palette, own fish table, own
-  rarity weights. Later water shifts the roll toward the rare end.
+- **7 spots**, 12 named species each (84 total), each with its own scene, palette
+  and fish table. Later water shifts the roll toward the rare end.
+
+  | | Spot | Unlocks at |
+  |---|---|---|
+  | 1 | Willow Pond — forest pond, early morning | free |
+  | 2 | Sunny Cove — sandy beach, midday | 1.5K |
+  | 3 | Pinecrest Lake — mountain lake, afternoon | 8K |
+  | 4 | Coral Lagoon — tropical shallows, noon | 90K |
+  | 5 | Firefly Marsh — wetland, dusk | 1M + rebirth 1 |
+  | 6 | Jungle Falls — plunge pool, warm rain | 9M + rebirth 2 |
+  | 7 | Aurora Fjord — polar water, night | 80M + rebirth 4 |
+
 - **8 rarity tiers** — Common through Secret — each with a color that carries
-  through the sounder trace, the result card, the hold and the bestiary.
+  through the fish shadow, the result card, the bucket and the journal.
 - **9 mutations** rolled independently, from Normal to Prismatic (×120 value).
 - **8 rods** trading luck, lure speed, control and value.
 - **6 baits**, one consumed per cast, auto-unequipping when the stack runs out.
 - **Rebirth** at a threshold that quadruples each cycle, granting tokens and a
-  permanent +30% earnings per cycle. Charts, bestiary and token upgrades persist.
+  permanent +30% earnings per cycle. Spots, journal and token upgrades persist.
 - **6 token upgrades** with per-level caps, each showing its current and next
   effect.
 
@@ -55,7 +70,7 @@ you hook it.
 ```
 first catch      8.8 s
 Birchwood Rod    1.8 min
-Grayharbor Pier  10.2 min
+Pinecrest Lake   10.2 min
 rebirth 1        18.5 min
 rebirth 2        35.0 min
 ```
@@ -80,11 +95,12 @@ resolution and no network. It needs `ANDROID_HOME` with `build-tools;34.0.0` and
 ## Layout
 
 ```
-src/data.js      fish tables, rods, baits, areas, upgrades — content only
+src/data.js      fish tables, rods, baits, spots and their scenes — content only
 src/engine.js    rolls, formulas, save shape — pure, no React or DOM
+src/scene.js     the painted scene renderer (canvas, no images)
 src/storage.js   persistence adapter (host API → Android bridge → browser)
-src/game.jsx     the console: sounder canvas, minigames, tabs
-src/styles.css   the instrument palette and layout
+src/game.jsx     the game itself: scene, minigames, tabs
+src/styles.css   palette, type and layout
 android/         manifest, MainActivity, resources
 build/           bundler, APK script, icon renderer, tests, balance sim
 ```

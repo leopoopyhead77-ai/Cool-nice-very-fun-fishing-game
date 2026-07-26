@@ -61,7 +61,7 @@ public class MainActivity extends Activity {
         web = new WebView(this);
         web.setLayoutParams(new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        web.setBackgroundColor(Color.parseColor("#04080D"));
+        web.setBackgroundColor(Color.parseColor("#EFE7D5"));
         web.setOverScrollMode(View.OVER_SCROLL_NEVER);
 
         WebSettings s = web.getSettings();

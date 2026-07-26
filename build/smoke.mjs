@@ -89,7 +89,7 @@ for (let i = 1; i <= 4; i++) if (await cycle(i)) landed += 1;
 if (!landed) throw new Error("four cycles, zero fish landed — reel is unwinnable");
 
 // --- selling ---------------------------------------------------------------
-await page.locator('.tab:has-text("Hold")').click();
+await page.locator('.tab:has-text("Bucket")').click();
 await page.waitForSelector(".item");
 const before = await page.locator(".strip-value").first().textContent();
 await page.locator('.btn:has-text("Sell all")').click();
@@ -99,7 +99,7 @@ if (before === after) throw new Error("selling did not change the coin readout")
 await step(`sold: coins ${before} -> ${after}`);
 
 // --- other tabs render -----------------------------------------------------
-for (const t of ["Shop", "Log", "Rebirth", "Fish"]) {
+for (const t of ["Shop", "Journal", "Rebirth", "Fish"]) {
   await page.locator(`.tab:has-text("${t}")`).click();
   await page.waitForTimeout(120);
 }
