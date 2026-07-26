@@ -1,0 +1,23 @@
+{
+  "name": "sounding-line",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build/build.mjs",
+    "fonts": "node build/fonts.mjs",
+    "icon": "node build/icon.mjs",
+    "apk": "npm run build && bash build/apk.sh",
+    "balance": "node build/balance.mjs",
+    "test": "node build/smoke.mjs && node build/bridge-test.mjs && node build/rebirth-test.mjs"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "playwright": "^1.49.1"
+  },
+  "description": "Sounding Line \u2014 a Fisch-style deep-water fishing game, shipped as a single-file web build and an Android APK."
+}

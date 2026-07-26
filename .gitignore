@@ -1,0 +1,6 @@
+node_modules/
+build/apk-work/
+build/release.keystore
+dist/*.png
+android/assets/
+dist/*.idsig
