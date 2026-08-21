@@ -4,3 +4,8 @@ build/release.keystore
 dist/*.png
 android/assets/
 dist/*.idsig
+auth/build/apk-work/
+auth/build/release.keystore
+auth/android/assets/
+auth/dist/*.idsig
+auth/dist/*.png

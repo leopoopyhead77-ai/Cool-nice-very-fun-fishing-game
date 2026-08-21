@@ -110,3 +110,10 @@ build/           bundler, APK script, icon renderer, tests, balance sim
 `src/storage.js` probes, in order: a host-provided artifact storage API, the
 Android `SaveBridge` (SharedPreferences), then browser storage. The APK always
 takes the native path. There is a reset button under Rebirth → Console.
+
+## Also in this repo
+
+`auth/` holds **Anchor**, an authenticator app that turns a Roblox 2FA setup QR
+code into the six-digit login codes — TOTP implemented from the RFCs, scanning
+through the camera or a screenshot, and its own 152 KB APK. See
+[`auth/README.md`](auth/README.md).
