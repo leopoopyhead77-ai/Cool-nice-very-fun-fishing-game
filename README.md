@@ -1,5 +1,8 @@
 # Sounding Line
 
+> This repo also holds **[Grid Clash](gridclash/README.md)**, a 1v1 shoot-and-build arena
+> for phones (APK at `gridclash/dist/grid-clash.apk`).
+
 A chill Fisch-style fishing game. Cast on a timing bar, set the hook inside a
 one-second window, fight the fish in a momentum-based reel minigame, sell your
 bucket, buy better gear, unlock new spots, rebirth, repeat.

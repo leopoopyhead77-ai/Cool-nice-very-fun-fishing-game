@@ -9,7 +9,11 @@
     "icon": "node build/icon.mjs",
     "apk": "npm run build && bash build/apk.sh",
     "balance": "node build/balance.mjs",
-    "test": "node build/smoke.mjs && node build/bridge-test.mjs && node build/rebirth-test.mjs"
+    "test": "node build/smoke.mjs && node build/bridge-test.mjs && node build/rebirth-test.mjs",
+    "clash:build": "node gridclash/build/build.mjs",
+    "clash:test": "node gridclash/build/sim.mjs && node gridclash/build/build.mjs && node gridclash/build/smoke.mjs",
+    "clash:icon": "node gridclash/build/icon.mjs",
+    "clash:apk": "node gridclash/build/build.mjs && bash gridclash/build/apk.sh"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -19,5 +23,5 @@
     "esbuild": "^0.24.0",
     "playwright": "^1.49.1"
   },
-  "description": "Sounding Line \u2014 a Fisch-style deep-water fishing game, shipped as a single-file web build and an Android APK."
+  "description": "Sounding Line — a Fisch-style deep-water fishing game, shipped as a single-file web build and an Android APK."
 }

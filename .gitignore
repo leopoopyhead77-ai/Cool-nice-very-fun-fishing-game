@@ -4,3 +4,8 @@ build/release.keystore
 dist/*.png
 android/assets/
 dist/*.idsig
+gridclash/build/apk-work/
+gridclash/build/release.keystore
+gridclash/build/shots/
+gridclash/android/assets/
+gridclash/dist/*.idsig
