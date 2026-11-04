@@ -39,8 +39,13 @@ export function createRenderer(canvas) {
     canvas.style.height = H + "px";
     // the arena rect comes from the input layout so touch zones and drawing agree
     v.TS = L.arena.TS;
-    v.ox = L.arena.ox;
-    v.oy = L.arena.oy;
+    // Portrait PvP draws the arena turned 90° via a canvas transform: world
+    // code still draws in an unturned frame at the origin.
+    v.portrait = !!L.arena.portrait;
+    v.OX = L.arena.ox;
+    v.OY = L.arena.oy;
+    v.ox = v.portrait ? 0 : L.arena.ox;
+    v.oy = v.portrait ? 0 : L.arena.oy;
     v.floor = null;
   }
 
@@ -697,6 +702,33 @@ export function createRenderer(canvas) {
       const ew = Math.min(hw, 104 * u);
       label(meta.names[1 - me], W - 56 * u, 12 * u, 9 * u, TEAM[1 - me].light, "right", 800);
       hpBar(W - 54 * u - ew, 18 * u, ew, 16 * u, e, "right");
+    } else if (L.portrait) {
+      for (const pad of L.pads) {
+        inFrame(pad, pad.info.x, pad.info.y, () => {
+          const mine = pad.team;
+          ctx.fillStyle = "rgba(8,12,20,0.78)";
+          rr(ctx, -66 * u, -9 * u, 132 * u, 18 * u, 9 * u);
+          ctx.fill();
+          ctx.fillStyle = TEAM[mine].main;
+          rr(ctx, -64 * u, -7 * u, 26 * u, 14 * u, 7 * u);
+          ctx.fill();
+          ctx.fillStyle = TEAM[1 - mine].main;
+          rr(ctx, 38 * u, -7 * u, 26 * u, 14 * u, 7 * u);
+          ctx.fill();
+          label(String(g.score[mine]), -51 * u, 0.5 * u, 10 * u);
+          label(String(g.score[1 - mine]), 51 * u, 0.5 * u, 10 * u);
+          label(`${timerText(g)} · R${g.round}`, 0, 0.5 * u, 9 * u, g.timeLeft <= 10 ? "#ff7a7a" : "#fff");
+        });
+      }
+      g.players.forEach((p, i) => {
+        const len = W * 0.7;
+        const y = i === 0 ? H - 5 * u : 0;
+        ctx.fillStyle = "rgba(255,255,255,0.08)";
+        ctx.fillRect((W - len) / 2, y, len, 5 * u);
+        ctx.fillStyle = TEAM[i].main;
+        const k = p.hp / MAX_HP;
+        ctx.fillRect((W - len * k) / 2, y, len * k, 5 * u);
+      });
     } else {
       // shared screen: a compact score pill both players can read
       ctx.fillStyle = "rgba(8,12,20,0.78)";
@@ -739,7 +771,7 @@ export function createRenderer(canvas) {
         label(mode === "edit" ? "EDIT MODE" : "BUILD MODE", cx, 49 * u, 9 * u, "#0b1220", "center", 900);
       }
     } else {
-      for (const pad of L.pads) drawBanner(g, pad.team, pad.center.x, pad.center.y, pad.rot, 0.62, H);
+      for (const pad of L.pads) drawBanner(g, pad.team, pad.center.x, pad.center.y, pad.rot, L.portrait ? 0.7 : 0.62, L.portrait ? W : H);
     }
   }
 
@@ -957,6 +989,7 @@ export function createRenderer(canvas) {
     if (!v.floor) buildFloor(g.world);
 
     ctx.save();
+    if (v.portrait) ctx.transform(0, -1, 1, 0, v.OX, v.OY + GW * v.TS);
     if (g.shake > 0) {
       const s = g.shake * v.TS * 0.25;
       ctx.translate((Math.random() - 0.5) * s, (Math.random() - 0.5) * s);
@@ -982,6 +1015,8 @@ export function createRenderer(canvas) {
     v,
     resize,
     draw,
-    toScreen: (x, y) => ({ x: sx(x), y: sy(y) }),
+    toScreen: (x, y) => (v.portrait
+      ? { x: v.OX + y * v.TS, y: v.OY + (GW - x) * v.TS }
+      : { x: sx(x), y: sy(y) }),
   };
 }

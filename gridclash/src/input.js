@@ -6,11 +6,13 @@
 // Solo (landscape, held normally):
 //   left half  – floating MOVE stick; right half – floating AIM stick.
 //
-// Local PvP (phone flat on a table in landscape, one player at each short end):
-//   Blue sits at the left end, Red at the right end. Each player owns their
-//   half of the screen; their left thumb moves and their right thumb aims, and
-//   their buttons and labels are turned to face them. Stick directions are
-//   board directions (push toward where you want to go on the shared arena).
+// Local PvP (one phone, one player at each end):
+//   Upright phone (the APK switches to portrait for this): Blue at the bottom
+//   end, Red at the top end; Red's controls are flipped to face them.
+//   Sideways screen (desktop browsers): Blue at the left end, Red at the right.
+//   Each player owns their half of the screen; left thumb moves, right thumb
+//   aims, and buttons and labels face their player. Sticks push in screen
+//   directions as seen on the shared arena.
 //
 // Aim stick: drag to aim (translucent trajectory line), release to fire; quick
 // tap = auto-aim; drag back to centre = cancel. In build mode it places walls,
@@ -72,6 +74,8 @@ export function layout(W, H, pvp = false) {
     };
   }
 
+  if (H > W) return portraitPvp(W, H);
+
   const R = 44 * u;
   const arena = fitArena(W, H, 18 * u, 4, 4);
   // stick column centre: middle of the margin beside the arena, but never so
@@ -111,6 +115,61 @@ export function layout(W, H, pvp = false) {
     u, R, top: 18 * u, pvp: true,
     arena,
     pause: { x: W / 2, y: H - 15 * u, r: 13 * u },
+    pads: [blue, red],
+  };
+}
+
+// Local PvP with the phone upright: Blue at the bottom end, Red at the top end.
+// The arena is drawn turned 90° (bases at each player's end), and each
+// player's controls sit in a band at their end, Red's flipped 180° to face them.
+function portraitPvp(W, H) {
+  const u = clamp(Math.min(W / 380, H / 760), 0.72, 1.35);
+  const R = 42 * u;
+  const band = 165 * u;
+  const TS = Math.min((W - 8) / GH, (H - band * 2) / GW);
+  const aw = GH * TS;
+  const ah = GW * TS;
+  const arena = {
+    TS, portrait: true,
+    ox: Math.round((W - aw) / 2),
+    oy: Math.round(band + (H - band * 2 - ah) / 2),
+  };
+  const edge = R + 26 * u; // leaves room for the hint under each stick
+  const lw = 100 * u;
+  const lh = 30 * u;
+  const blue = {
+    team: 0, rot: 0, center: { x: W / 2, y: H * 0.72 },
+    move: { x: R + 16 * u, y: H - edge },           // left thumb
+    aim: { x: W - R - 16 * u, y: H - edge },        // right thumb
+    build: { x: W - R - 16 * u, y: H - edge - R - 30 * u, r: 24 * u }, // above the aim stick
+    slot0: slotRect(W / 2, H - 58 * u, lw, lh, 0),
+    slot1: slotRect(W / 2, H - 24 * u, lw, lh, 0),
+    info: { x: W / 2, y: H - band + 14 * u },
+    zones: {
+      move: { x0: 0, y0: H / 2, x1: W / 2, y1: H },
+      aim: { x0: W / 2, y0: H / 2, x1: W, y1: H },
+    },
+  };
+  const flip = (p) => ({ ...p, x: W - p.x, y: H - p.y });
+  const red = {
+    team: 1, rot: Math.PI, center: { x: W / 2, y: H * 0.28 },
+    move: flip(blue.move),
+    aim: flip(blue.aim),
+    build: flip(blue.build),
+    slot0: slotRect(W / 2, 58 * u, lw, lh, Math.PI),
+    slot1: slotRect(W / 2, 24 * u, lw, lh, Math.PI),
+    info: { x: W / 2, y: band - 14 * u },
+    zones: {
+      move: { x0: W / 2, y0: 0, x1: W, y1: H / 2 },
+      aim: { x0: 0, y0: 0, x1: W / 2, y1: H / 2 },
+    },
+  };
+  return {
+    u, R, top: 0, pvp: true, portrait: true,
+    // screen directions are turned 90° from board directions in this layout
+    worldRot: Math.PI / 2,
+    arena,
+    pause: { x: 16 * u, y: H / 2, r: 13 * u },
     pads: [blue, red],
   };
 }
@@ -279,14 +338,24 @@ export function createInput(canvas, hooks) {
       const dx = a.x - pp.x;
       const dy = a.y - pp.y;
       const reach = st.L.arena.TS * 9;
-      return { angle: Math.atan2(dy, dx), mag: Math.min(1, Math.hypot(dx, dy) / reach) };
+      return { angle: Math.atan2(dy, dx) + (st.L.worldRot || 0), mag: Math.min(1, Math.hypot(dx, dy) / reach) };
     }
     const dx = a.x - a.bx;
     const dy = a.y - a.by;
-    return { angle: Math.atan2(dy, dx), mag: Math.min(1, Math.hypot(dx, dy) / st.L.R) };
+    return { angle: Math.atan2(dy, dx) + (st.L.worldRot || 0), mag: Math.min(1, Math.hypot(dx, dy) / st.L.R) };
   }
 
+  // Movement in board directions (the arena may be drawn turned on screen).
   function moveVector(team) {
+    const v = screenMove(team);
+    const r = st.L.worldRot || 0;
+    if (!r) return v;
+    const c = Math.cos(r);
+    const n = Math.sin(r);
+    return { x: v.x * c - v.y * n, y: v.x * n + v.y * c };
+  }
+
+  function screenMove(team) {
     const m = st.ps[team].move;
     if (m) {
       const dx = m.x - m.bx;

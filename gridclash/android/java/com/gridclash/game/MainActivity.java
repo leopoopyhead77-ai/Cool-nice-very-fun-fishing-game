@@ -4,6 +4,7 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
@@ -52,6 +53,44 @@ public class MainActivity extends Activity {
         }
     }
 
+    /**
+     * Lets the page lock the screen: portrait for local 2-player (one player
+     * at each end of the upright phone), landscape for everything else.
+     * Reached from the page as window.AndroidApp.
+     */
+    public static class AppBridge {
+        private final MainActivity activity;
+
+        AppBridge(MainActivity activity) {
+            this.activity = activity;
+        }
+
+        @JavascriptInterface
+        public void setOrientation(String o) {
+            activity.runOnUiThread(new ApplyOrientation(activity, "portrait".equals(o)));
+        }
+    }
+
+    // Static and named on purpose: d8 from build-tools 34 crashes on inner
+    // (non-static) and anonymous classes produced by newer javac versions.
+    static class ApplyOrientation implements Runnable {
+        private final MainActivity activity;
+        private final boolean portrait;
+
+        ApplyOrientation(MainActivity activity, boolean portrait) {
+            this.activity = activity;
+            this.portrait = portrait;
+        }
+
+        @Override
+        public void run() {
+            activity.setRequestedOrientation(portrait
+                    ? ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    : ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+            activity.hideSystemUi();
+        }
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -80,6 +119,7 @@ public class MainActivity extends Activity {
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
 
         web.addJavascriptInterface(new Store(this), "AndroidStore");
+        web.addJavascriptInterface(new AppBridge(this), "AndroidApp");
         web.setWebViewClient(new WebViewClient());
 
         setContentView(web);
@@ -88,7 +128,7 @@ public class MainActivity extends Activity {
     }
 
     @SuppressWarnings("deprecation")
-    private void hideSystemUi() {
+    void hideSystemUi() {
         View d = getWindow().getDecorView();
         d.setSystemUiVisibility(
                 View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY

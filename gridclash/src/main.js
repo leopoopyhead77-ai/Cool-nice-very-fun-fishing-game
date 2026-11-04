@@ -36,8 +36,8 @@ app.innerHTML = `
       <h1 class="logo">GRID<span>CLASH</span></h1>
       <p class="tag">1v1 shoot &amp; build arena · 30×20</p>
       <div class="menu-grid">
+        <button class="btn red big" id="pvp">👥 2 PLAYERS <small>1v1 · same phone</small></button>
         <button class="btn primary big" id="play">▶ PLAY vs BOT</button>
-        <button class="btn red big" id="pvp">👥 2 PLAYERS <small>same phone</small></button>
         <button class="btn big disabled" id="online" aria-disabled="true">🌐 ONLINE <small>coming soon</small></button>
       </div>
       <div class="row">
@@ -83,7 +83,7 @@ app.innerHTML = `
         <li><b>EDIT</b> — aim at one of your walls and release to cut one tile out (a window/door). Release on the open tile again, or press <b>RESET</b>, to restore it. One edited tile per wall at a time.</li>
         <li><b>Weapon slots</b> — tap to switch, tap the active one to reload.</li>
         <li>Medkits spawn at the top and bottom middle. First to 3 rounds wins.</li>
-        <li><b>2 Players</b> — lay the phone flat in landscape. Blue sits at the left end, Red at the right end. Each player uses their own half: left thumb moves, right thumb aims, and your buttons face you. Push the sticks toward where you want to go on the board. Pick Red's guns with the P2 tab on the loadout screen.</li>
+        <li><b>2 Players</b> — the phone turns upright. Blue plays from the bottom end, Red from the top end; each side's controls face its player. Left thumb moves, right thumb aims, BUILD sits above your aim stick. Pick Red's guns with the P2 tab on the loadout screen.</li>
       </ul>
       <p class="kbd">Keyboard: WASD move · mouse aim/release · B build · E edit · R reset/reload · 1/2 weapons</p>
       <button class="btn primary" id="helpBack">Got it</button>
@@ -265,6 +265,7 @@ $("toMenu").addEventListener("click", () => {
 });
 
 function toMenu() {
+  setOrientation("landscape");
   input.setPvp(false);
   resize();
   refreshMenu();
@@ -324,8 +325,17 @@ function botLoadout() {
   return [pick(far), pick(close)];
 }
 
+// The APK locks orientation: portrait for local 2-player, landscape otherwise.
+function setOrientation(o) {
+  document.body.classList.toggle("pvp", o === "portrait");
+  try {
+    window.AndroidApp?.setOrientation(o);
+  } catch (_) { /* not running in the APK */ }
+}
+
 function startMatch(mode = matchMode) {
   matchMode = mode;
+  setOrientation(mode === "pvp" ? "portrait" : "landscape");
   input.reset();
   input.setPvp(mode === "pvp");
   resize();

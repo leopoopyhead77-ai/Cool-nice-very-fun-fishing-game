@@ -33,15 +33,16 @@ app is signed with its own key rather than coming from the Play Store.
 | **Weapon slots** (top right) | Tap to switch guns. Tap the active one to reload. |
 | **Pause** | Top-right corner, or the Android back button. |
 
-### 2 Players on one phone
+### 2 Players on one phone (local 1v1)
 
-Lay the phone flat on a table in landscape. **Blue sits at the left end, Red at the right end** (the phone's top and bottom edges).
+Tap **2 PLAYERS** and the phone switches to portrait. **Blue plays from the bottom end and Red from the top end.** The arena runs between you, with each base at its player's end.
 
-- Each player owns their half of the screen: **left thumb on the move stick, right thumb on the aim stick**.
-- Your BUILD button, weapon slots / EDIT / RESET and materials counter are on your side, turned to face you.
-- Sticks follow board directions: push toward where you want to go or shoot on the shared arena.
-- Your health is the coloured strip along your edge of the phone. The score and timer are in the pill at the top centre, and pause is at the bottom centre.
+- Each player owns their half of the screen: **left thumb on the move stick, right thumb on the aim stick**, with BUILD above the aim stick.
+- Red's controls, weapon slots / EDIT / RESET, materials, score and banners are flipped 180° so they face Red.
+- Push a stick away from yourself to move or shoot toward the other player.
+- Your health is the coloured strip along your end of the phone. Pause is on the left edge, at mid-screen.
 - On the loadout screen, switch to the **P2 · Red** tab to pick Red's two guns.
+- The menu and bot mode stay in landscape. In a desktop browser window that's wider than it is tall, 2-player puts Blue at the left end and Red at the right instead.
 
 Keyboard and mouse also work in a browser (player 1 only): WASD to move, mouse to aim (release to
 fire), B to build, E to edit, R to reset or reload, 1/2 or Q to switch weapons, Esc to pause.
@@ -112,7 +113,7 @@ src/input.js    twin joysticks for 1 or 2 players, BUILD / EDIT / RESET / weapon
 src/render.js   canvas renderer, trajectory and build/edit previews, HUD
 src/audio.js    synthesized sound effects + vibration
 src/main.js     menus, loadout screen, game loop
-android/        one Activity hosting the page in a full-screen landscape WebView
+android/        one Activity hosting the page in a full-screen WebView (landscape; portrait for 2-player)
 build/          bundler, APK script, icon renderer, tests
 ```
 
