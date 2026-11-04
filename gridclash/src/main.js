@@ -8,17 +8,21 @@ import { unlockAudio, playEvents, uiClick, audio } from "./audio.js";
 import { load, save } from "./storage.js";
 
 const ME = 0;
-const NAMES = ["YOU", "BOT"];
+const NAMES_BOT = ["YOU", "BOT"];
+const NAMES_PVP = ["BLUE", "RED"];
+let matchMode = "bot"; // "bot" | "pvp"
+const names = () => (matchMode === "pvp" ? NAMES_PVP : NAMES_BOT);
 const DIFFS = ["easy", "normal", "hard"];
 
 const settings = {
   loadout: load("loadout", ["ar", "shotgun"]),
+  loadout2: load("loadout2", ["burst", "smg"]),
   difficulty: load("difficulty", "normal"),
   muted: load("muted", false),
 };
-if (!Array.isArray(settings.loadout) || settings.loadout.length !== 2 || !settings.loadout.every((id) => GUN_BY_ID[id])) {
-  settings.loadout = ["ar", "shotgun"];
-}
+const validLoadout = (l) => Array.isArray(l) && l.length === 2 && l.every((id) => GUN_BY_ID[id]);
+if (!validLoadout(settings.loadout)) settings.loadout = ["ar", "shotgun"];
+if (!validLoadout(settings.loadout2)) settings.loadout2 = ["burst", "smg"];
 if (!DIFFS.includes(settings.difficulty)) settings.difficulty = "normal";
 audio.muted = !!settings.muted;
 
@@ -33,6 +37,7 @@ app.innerHTML = `
       <p class="tag">1v1 shoot &amp; build arena · 30×20</p>
       <div class="menu-grid">
         <button class="btn primary big" id="play">▶ PLAY vs BOT</button>
+        <button class="btn red big" id="pvp">👥 2 PLAYERS <small>same phone</small></button>
         <button class="btn big disabled" id="online" aria-disabled="true">🌐 ONLINE <small>coming soon</small></button>
       </div>
       <div class="row">
@@ -55,6 +60,10 @@ app.innerHTML = `
   <section id="loadout" class="screen hidden">
     <div class="lo-head">
       <button class="btn ghost small" id="loBack">‹ Back</button>
+      <div class="seg lo-player" id="loPlayer">
+        <button data-p="0">P1 · Blue</button>
+        <button data-p="1">P2 · Red</button>
+      </div>
       <div class="lo-slots">
         <button class="lo-slot" data-slot="0"></button>
         <button class="lo-slot" data-slot="1"></button>
@@ -74,6 +83,7 @@ app.innerHTML = `
         <li><b>EDIT</b> — aim at one of your walls and release to cut one tile out (a window/door). Release on the open tile again, or press <b>RESET</b>, to restore it. One edited tile per wall at a time.</li>
         <li><b>Weapon slots</b> — tap to switch, tap the active one to reload.</li>
         <li>Medkits spawn at the top and bottom middle. First to 3 rounds wins.</li>
+        <li><b>2 Players</b> — lay the phone flat in landscape. Blue sits at the left end, Red at the right end. Each player uses their own half: left thumb moves, right thumb aims, and your buttons face you. Push the sticks toward where you want to go on the board. Pick Red's guns with the P2 tab on the loadout screen.</li>
       </ul>
       <p class="kbd">Keyboard: WASD move · mouse aim/release · B build · E edit · R reset/reload · 1/2 weapons</p>
       <button class="btn primary" id="helpBack">Got it</button>
@@ -130,7 +140,11 @@ $("diff").addEventListener("click", (e) => {
 });
 $("play").addEventListener("click", () => {
   click();
-  startMatch();
+  startMatch("bot");
+});
+$("pvp").addEventListener("click", () => {
+  click();
+  startMatch("pvp");
 });
 $("online").addEventListener("click", () => {
   const b = $("online");
@@ -160,17 +174,20 @@ $("mute").addEventListener("click", () => {
 // ---- loadout --------------------------------------------------------------------
 
 let editSlot = 0;
+let editPlayer = 0;
+const editList = () => (editPlayer === 1 ? settings.loadout2 : settings.loadout);
 function renderLoadout() {
+  $("loPlayer").querySelectorAll("button").forEach((b) => b.classList.toggle("on", Number(b.dataset.p) === editPlayer));
   document.querySelectorAll(".lo-slot").forEach((b) => {
     const i = Number(b.dataset.slot);
-    const g = GUN_BY_ID[settings.loadout[i]];
+    const g = GUN_BY_ID[editList()[i]];
     b.classList.toggle("on", i === editSlot);
     b.style.setProperty("--c", TIER_COLOR[g.tier]);
     b.innerHTML = `<small>SLOT ${i + 1}</small>${g.name}`;
   });
   $("gunGrid").innerHTML = GUNS.map((g) => {
     const s = gunStats(g);
-    const idx = settings.loadout.indexOf(g.id);
+    const idx = editList().indexOf(g.id);
     const bar = (n, v) => `<div class="stat"><span>${n}</span><b><i style="width:${Math.round(v * 100)}%"></i></b></div>`;
     return `<button class="gun ${idx >= 0 ? "equipped" : ""}" data-id="${g.id}" style="--c:${TIER_COLOR[g.tier]};--g:${g.color}">
       <div class="gun-top"><span class="swatch"></span><span class="gname">${g.name}</span>${idx >= 0 ? `<span class="badge">${idx + 1}</span>` : ""}</div>
@@ -191,11 +208,19 @@ $("gunGrid").addEventListener("click", (e) => {
   const b = e.target.closest(".gun");
   if (!b) return;
   const id = b.dataset.id;
-  const other = settings.loadout[1 - editSlot];
-  if (other === id) settings.loadout[1 - editSlot] = settings.loadout[editSlot]; // swap
-  settings.loadout[editSlot] = id;
+  const list = editList();
+  if (list[1 - editSlot] === id) list[1 - editSlot] = list[editSlot]; // swap
+  list[editSlot] = id;
   editSlot = 1 - editSlot;
-  save("loadout", settings.loadout);
+  save(editPlayer === 1 ? "loadout2" : "loadout", list);
+  click();
+  renderLoadout();
+});
+$("loPlayer").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  editPlayer = Number(b.dataset.p);
+  editSlot = 0;
   click();
   renderLoadout();
 });
@@ -227,8 +252,7 @@ $("quit").addEventListener("click", () => {
   click();
   game = null;
   paused = false;
-  refreshMenu();
-  show("menu");
+  toMenu();
 });
 $("again").addEventListener("click", () => {
   click();
@@ -237,20 +261,31 @@ $("again").addEventListener("click", () => {
 $("toMenu").addEventListener("click", () => {
   click();
   game = null;
+  toMenu();
+});
+
+function toMenu() {
+  input.setPvp(false);
+  resize();
   refreshMenu();
   show("menu");
-});
+}
 
 function showResults() {
   const won = game.matchWinner === ME;
   const draw = game.matchWinner < 0;
-  $("resTitle").textContent = draw ? "DRAW" : won ? "VICTORY" : "DEFEAT";
-  $("resTitle").className = draw ? "" : won ? "win" : "lose";
+  if (matchMode === "pvp") {
+    $("resTitle").textContent = draw ? "DRAW" : `${NAMES_PVP[game.matchWinner]} WINS`;
+    $("resTitle").className = draw ? "" : game.matchWinner === 0 ? "blue" : "lose";
+  } else {
+    $("resTitle").textContent = draw ? "DRAW" : won ? "VICTORY" : "DEFEAT";
+    $("resTitle").className = draw ? "" : won ? "win" : "lose";
+  }
   $("resScore").textContent = `${game.score[0]} – ${game.score[1]}`;
   const [a, b] = game.players;
   const acc = (p) => (p.stats.shots ? Math.round((p.stats.hits / p.stats.shots) * 100) + "%" : "–");
   const rows = [
-    ["", "You", "Bot"],
+    matchMode === "pvp" ? ["", "Blue", "Red"] : ["", "You", "Bot"],
     ["Damage", a.stats.dmg, b.stats.dmg],
     ["Accuracy", acc(a), acc(b)],
     ["Walls built", a.stats.walls, b.stats.walls],
@@ -268,9 +303,9 @@ function showResults() {
 let game = null;
 const renderer = createRenderer(canvas);
 const input = createInput(canvas, {
-  mode: () => (game ? game.players[ME].mode : "combat"),
-  slot: () => (game ? game.players[ME].slot : 0),
-  playerScreen: () => (game ? renderer.toScreen(game.players[ME].x, game.players[ME].y) : null),
+  mode: (team) => (game ? game.players[team].mode : "combat"),
+  slot: (team) => (game ? game.players[team].slot : 0),
+  playerScreen: (team) => (game ? renderer.toScreen(game.players[team].x, game.players[team].y) : null),
   tileSize: () => renderer.v.TS,
   onPause: pause,
   onFirstTouch: unlockAudio,
@@ -289,12 +324,17 @@ function botLoadout() {
   return [pick(far), pick(close)];
 }
 
-function startMatch() {
+function startMatch(mode = matchMode) {
+  matchMode = mode;
   input.reset();
+  input.setPvp(mode === "pvp");
+  resize();
   game = createGame({
-    loadouts: [settings.loadout.slice(), botLoadout()],
-    names: NAMES,
-    controllers: [input.controller, createBot(settings.difficulty)],
+    loadouts: [settings.loadout.slice(), mode === "pvp" ? settings.loadout2.slice() : botLoadout()],
+    names: names(),
+    controllers: mode === "pvp"
+      ? [input.controllers[0], input.controllers[1]]
+      : [input.controllers[0], createBot(settings.difficulty)],
   });
   paused = false;
   show(null);
@@ -330,13 +370,13 @@ function frame(now) {
       step(game, DT);
       acc -= DT;
       if (game.events.length) {
-        playEvents(game.events, ME);
+        playEvents(game.events, matchMode === "pvp" ? -1 : ME);
         if (game.events.some((e) => e.t === "matchEnd")) setTimeout(showResults, 900);
         game.events.length = 0;
       }
     }
   }
-  renderer.draw(game, ME, input, { names: NAMES });
+  renderer.draw(game, input, { names: names(), humans: matchMode === "pvp" ? [0, 1] : [ME] });
 }
 
 // A slow-panning demo match behind the main menu.
@@ -352,7 +392,7 @@ function drawIdle(t) {
   }
   step(demo, 1 / 60);
   demo.events.length = 0;
-  renderer.draw(demo, 0, { st: { move: null, aim: null } }, { names: ["BLUE", "RED"] });
+  renderer.draw(demo, { st: {} }, { names: ["BLUE", "RED"], humans: [] });
 }
 
 resize();
@@ -364,6 +404,7 @@ requestAnimationFrame(frame);
 window.__clash = {
   get game() { return game; },
   get layout() { return input.st.L; },
+  get mode() { return matchMode; },
   toScreen: (x, y) => renderer.toScreen(x, y),
   startMatch,
   settings,

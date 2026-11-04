@@ -71,31 +71,33 @@ const SHOT = {
 // Plays the sounds for one frame's worth of game events.
 export function playEvents(events, me) {
   for (const e of events) {
+    // me < 0: both players share this phone, so every event is local
+    const mine = me < 0 || e.team === me;
     switch (e.t) {
       case "shot": SHOT[e.gun]?.(); break;
       case "boom": noise(0.6, 400, 0.6, 0.8); tone(90, 30, 0.5, 0.25, "sine"); break;
       case "hurt":
-        if (e.team === me) { tone(180, 90, 0.12, 0.18, "square"); vibrate(30); }
+        if (mine) { tone(180, 90, 0.12, 0.18, "square"); vibrate(30); }
         else tone(1400, 900, 0.05, 0.08, "triangle");
         break;
       case "tileHit": noise(0.04, 1200, 2, 0.08, "bandpass"); break;
       case "tileBreak": noise(0.18, 600, 1, 0.3); tone(200, 80, 0.12, 0.08, "triangle"); break;
       case "build":
-        if (e.team === me) vibrate(12);
+        if (mine) vibrate(12);
         tone(140, 70, 0.1, 0.2, "triangle"); noise(0.08, 900, 1, 0.2);
         break;
       case "edit": tone(900, 1300, 0.06, 0.1, "triangle"); break;
       case "restore": tone(1300, 800, 0.06, 0.1, "triangle"); break;
-      case "deny": if (e.team === me) tone(160, 140, 0.08, 0.1, "square"); break;
-      case "mode": if (e.team === me) tone(600, 700, 0.04, 0.06, "triangle"); break;
-      case "swap": if (e.team === me) tone(500, 300, 0.05, 0.06, "triangle"); break;
-      case "reload": if (e.team === me) tone(300, 400, 0.05, 0.05, "square"); break;
-      case "reloaded": if (e.team === me) tone(700, 900, 0.05, 0.06, "square"); break;
+      case "deny": if (mine) tone(160, 140, 0.08, 0.1, "square"); break;
+      case "mode": if (mine) tone(600, 700, 0.04, 0.06, "triangle"); break;
+      case "swap": if (mine) tone(500, 300, 0.05, 0.06, "triangle"); break;
+      case "reload": if (mine) tone(300, 400, 0.05, 0.05, "square"); break;
+      case "reloaded": if (mine) tone(700, 900, 0.05, 0.06, "square"); break;
       case "heal": tone(500, 1000, 0.25, 0.12, "sine"); break;
-      case "death": tone(400, 40, 0.7, 0.2, "sawtooth"); noise(0.5, 500, 0.6, 0.4); if (e.team === me) vibrate(120); break;
+      case "death": tone(400, 40, 0.7, 0.2, "sawtooth"); noise(0.5, 500, 0.6, 0.4); if (mine) vibrate(120); break;
       case "go": tone(660, 880, 0.18, 0.15, "square"); break;
       case "roundEnd": tone(520, 260, 0.4, 0.12, "triangle"); break;
-      case "matchEnd": tone(e.winner === me ? 520 : 300, e.winner === me ? 1040 : 120, 0.7, 0.15, "triangle"); break;
+      case "matchEnd": tone(me < 0 || e.winner === me ? 520 : 300, me < 0 || e.winner === me ? 1040 : 120, 0.7, 0.15, "triangle"); break;
     }
   }
 }

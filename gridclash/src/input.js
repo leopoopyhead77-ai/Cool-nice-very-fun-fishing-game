@@ -1,41 +1,130 @@
-// Touch controls (landscape):
-//   left half  – floating MOVE joystick; push direction = walk direction
-//   right half – floating AIM joystick; drag to aim (a translucent trajectory
-//                line shows the shot), release to fire. A quick tap fires with
-//                auto-aim; dragging back to the centre cancels.
-//   BUILD button above the aim stick switches it to a build stick (preview
-//   ghost while dragging, release to place). In build mode the weapon slots
-//   become EDIT and RESET.
-// Desktop: WASD move, mouse aim + release to fire, B build, E edit, R reset /
-// reload, 1/2 or Q weapons.
+// Touch controls, for one player (vs bot) or two players on one phone.
+//
+// Each human gets a "pad": a move stick, an aim stick, a BUILD button above
+// the aim stick and two weapon-slot buttons (EDIT / RESET in build mode).
+//
+// Solo (landscape, held normally):
+//   left half  – floating MOVE stick; right half – floating AIM stick.
+//
+// Local PvP (phone flat on a table in landscape, one player at each short end):
+//   Blue sits at the left end, Red at the right end. Each player owns their
+//   half of the screen; their left thumb moves and their right thumb aims, and
+//   their buttons and labels are turned to face them. Stick directions are
+//   board directions (push toward where you want to go on the shared arena).
+//
+// Aim stick: drag to aim (translucent trajectory line), release to fire; quick
+// tap = auto-aim; drag back to centre = cancel. In build mode it places walls,
+// in edit mode it cuts / restores one tile of your wall.
+// Desktop (player 1): WASD, mouse aim + release, B build, E edit, R reset /
+// reload, 1/2 or Q weapons, Esc pause.
 
-export function layout(W, H) {
-  const u = Math.max(0.72, Math.min(1.35, Math.min(W / 760, H / 380)));
-  const R = 58 * u;
-  const aim = { x: W - 128 * u, y: H - 112 * u };
-  const move = { x: 128 * u, y: H - 112 * u };
-  // BUILD sits directly over the attack stick
-  const build = { x: aim.x, y: aim.y - R - 48 * u, r: 32 * u };
-  // weapon slots (EDIT / RESET in build mode) stack in the right margin
-  const bw = 116 * u;
-  const bh = 34 * u;
-  const slotX = W - 8 * u - bw;
-  const slot0 = { x: slotX, y: 46 * u, w: bw, h: bh };
-  const slot1 = { x: slotX, y: 46 * u + bh + 6 * u, w: bw, h: bh };
-  const pause = { x: W - 30 * u, y: 24 * u, r: 18 * u };
-  return { u, R, aim, move, build, slot0, slot1, pause, top: 40 * u };
+import { GW, GH } from "./world.js";
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+function fitArena(W, H, top, side, bottom) {
+  const TS = Math.min((W - side * 2) / GW, (H - top - bottom) / GH);
+  return {
+    TS,
+    ox: Math.round((W - TS * GW) / 2),
+    oy: Math.round(top + (H - top - bottom - TS * GH) / 2),
+  };
+}
+
+// A button rect in screen space, plus its size in the pad's own (rotated)
+// frame so the renderer can draw it facing its player.
+function slotRect(cx, cy, lw, lh, rot) {
+  const sideways = Math.abs(Math.sin(rot)) > 0.5;
+  const w = sideways ? lh : lw;
+  const h = sideways ? lw : lh;
+  return { x: cx - w / 2, y: cy - h / 2, w, h, cx, cy, lw, lh };
+}
+
+export function layout(W, H, pvp = false) {
+  const u = clamp(Math.min(W / 760, H / 380), 0.72, 1.35);
+
+  if (!pvp) {
+    const R = 58 * u;
+    const top = 40 * u;
+    const aim = { x: W - 128 * u, y: H - 112 * u };
+    const move = { x: 128 * u, y: H - 112 * u };
+    // BUILD sits directly over the attack stick
+    const build = { x: aim.x, y: aim.y - R - 48 * u, r: 32 * u };
+    // weapon slots (EDIT / RESET in build mode) stack in the right margin
+    const bw = 116 * u;
+    const bh = 34 * u;
+    const sx = W - 8 * u - bw / 2;
+    const pad = {
+      team: 0, rot: 0, center: { x: W / 2, y: H / 2 },
+      move, aim, build,
+      slot0: slotRect(sx, 46 * u + bh / 2, bw, bh, 0),
+      slot1: slotRect(sx, 46 * u + bh * 1.5 + 6 * u, bw, bh, 0),
+      zones: {
+        move: { x0: 0, y0: top, x1: W / 2, y1: H },
+        aim: { x0: W / 2, y0: top, x1: W, y1: H },
+      },
+    };
+    return {
+      u, R, top, pvp: false,
+      arena: fitArena(W, H, top, 4, 4),
+      pause: { x: W - 30 * u, y: 24 * u, r: 18 * u },
+      pads: [pad],
+    };
+  }
+
+  const R = 44 * u;
+  const arena = fitArena(W, H, 18 * u, 4, 4);
+  // stick column centre: middle of the margin beside the arena, but never so
+  // close to the edge that the stick ring is cut off
+  const cx0 = Math.max(R + 6 * u, arena.ox / 2);
+  const cx1 = W - cx0;
+  const edge = R + 14 * u;
+  const lw = 96 * u;
+  const lh = 28 * u;
+  const off = lh / 2 + 3 * u;
+  const blue = {
+    team: 0, rot: Math.PI / 2, center: { x: W / 4, y: H / 2 },
+    move: { x: cx0, y: edge },            // under Blue's left thumb
+    aim: { x: cx0, y: H - edge },         // under Blue's right thumb
+    build: { x: cx0 + R + 30 * u, y: H - edge, r: 26 * u }, // "above" = toward the arena
+    // Blue's "up" points to screen +x, so slot 1 (top) is the inner one
+    slot0: slotRect(cx0 + off, H / 2, lw, lh, Math.PI / 2),
+    slot1: slotRect(cx0 - off, H / 2, lw, lh, Math.PI / 2),
+    zones: {
+      move: { x0: 0, y0: 0, x1: W / 2, y1: H / 2 },
+      aim: { x0: 0, y0: H / 2, x1: W / 2, y1: H },
+    },
+  };
+  const red = {
+    team: 1, rot: -Math.PI / 2, center: { x: (W * 3) / 4, y: H / 2 },
+    move: { x: cx1, y: H - edge },
+    aim: { x: cx1, y: edge },
+    build: { x: cx1 - R - 30 * u, y: edge, r: 26 * u },
+    slot0: slotRect(cx1 - off, H / 2, lw, lh, -Math.PI / 2),
+    slot1: slotRect(cx1 + off, H / 2, lw, lh, -Math.PI / 2),
+    zones: {
+      aim: { x0: W / 2, y0: 0, x1: W, y1: H / 2 },
+      move: { x0: W / 2, y0: H / 2, x1: W, y1: H },
+    },
+  };
+  return {
+    u, R, top: 18 * u, pvp: true,
+    arena,
+    pause: { x: W / 2, y: H - 15 * u, r: 13 * u },
+    pads: [blue, red],
+  };
 }
 
 const inRect = (b, x, y) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
 const inCircle = (b, x, y, pad = 6) => Math.hypot(x - b.x, y - b.y) <= b.r + pad;
+const inZone = (z, x, y) => x >= z.x0 && x < z.x1 && y >= z.y0 && y < z.y1;
 
 export function createInput(canvas, hooks) {
   const st = {
-    W: 1, H: 1, L: layout(1, 1),
-    move: null, // { id, bx, by, x, y }
-    aim: null,  // { id, bx, by, x, y, dragged, mouse }
+    W: 1, H: 1, pvp: false, L: layout(1, 1),
+    // per team: { move, aim, actions }
+    ps: [0, 1].map(() => ({ move: null, aim: null, actions: [] })),
     keys: new Set(),
-    actions: [],
     pressed: null,
     enabled: false,
   };
@@ -43,56 +132,66 @@ export function createInput(canvas, hooks) {
   function resize(W, H) {
     st.W = W;
     st.H = H;
-    st.L = layout(W, H);
+    st.L = layout(W, H, st.pvp);
   }
 
-  // Which HUD button is under (x, y), given the player's current mode.
+  function setPvp(pvp) {
+    st.pvp = !!pvp;
+    resize(st.W, st.H);
+  }
+
+  // Which HUD button is under (x, y)? → { team, btn } or null.
   function buttonAt(x, y) {
     const L = st.L;
-    const mode = hooks.mode();
-    if (inCircle(L.pause, x, y)) return "pause";
-    if (inCircle(L.build, x, y)) return "build";
-    if (inRect(L.slot0, x, y)) return mode === "combat" ? "slot0" : "edit";
-    if (inRect(L.slot1, x, y)) return mode === "combat" ? "slot1" : "reset";
+    if (inCircle(L.pause, x, y)) return { team: 0, btn: "pause" };
+    for (const pad of L.pads) {
+      const mode = hooks.mode(pad.team);
+      if (inCircle(pad.build, x, y)) return { team: pad.team, btn: "build" };
+      if (inRect(pad.slot0, x, y)) return { team: pad.team, btn: mode === "combat" ? "slot0" : "edit" };
+      if (inRect(pad.slot1, x, y)) return { team: pad.team, btn: mode === "combat" ? "slot1" : "reset" };
+    }
     return null;
   }
 
-  function press(btn) {
-    const mode = hooks.mode();
-    hooks.onButton?.(btn);
+  function press(team, btn) {
+    const mode = hooks.mode(team);
+    const out = st.ps[team].actions;
     switch (btn) {
       case "pause":
         hooks.onPause?.();
         break;
       case "build":
-        st.actions.push({ t: "mode", mode: mode === "combat" ? "build" : "combat" });
+        out.push({ t: "mode", mode: mode === "combat" ? "build" : "combat" });
         break;
       case "edit":
-        st.actions.push({ t: "mode", mode: mode === "edit" ? "build" : "edit" });
+        out.push({ t: "mode", mode: mode === "edit" ? "build" : "edit" });
         break;
       case "reset": {
-        const a = aimVector();
-        st.actions.push(a && a.mag > 0.25 ? { t: "reset", angle: a.angle } : { t: "reset" });
+        const a = aimVector(team);
+        out.push(a && a.mag > 0.25 ? { t: "reset", angle: a.angle } : { t: "reset" });
         break;
       }
       case "slot0":
       case "slot1": {
         const slot = btn === "slot0" ? 0 : 1;
-        if (hooks.slot() === slot) st.actions.push({ t: "reload" });
-        else st.actions.push({ t: "slot", slot });
+        if (hooks.slot(team) === slot) out.push({ t: "reload" });
+        else out.push({ t: "slot", slot });
         break;
       }
     }
   }
 
-  function clampBase(x, y, side) {
-    const L = st.L;
-    const m = L.R + 10 * L.u;
-    const minX = side === "left" ? m : st.W / 2 + m * 0.4;
-    const maxX = side === "left" ? st.W / 2 - m * 0.4 : st.W - m;
+  // Keep a floating stick's base inside its zone, with a full margin at
+  // screen edges and a smaller one at edges shared with another zone.
+  function clampBase(x, y, z) {
+    const m = st.L.R + 8 * st.L.u;
+    const mx0 = z.x0 <= 0 ? m : m * 0.4;
+    const mx1 = z.x1 >= st.W ? m : m * 0.4;
+    const my0 = z.y0 <= st.L.top ? m : m * 0.4;
+    const my1 = z.y1 >= st.H ? m : m * 0.4;
     return {
-      x: Math.max(minX, Math.min(maxX, x)),
-      y: Math.max(L.top + m, Math.min(st.H - m, y)),
+      x: clamp(x, z.x0 + mx0, Math.max(z.x0 + mx0, z.x1 - mx1)),
+      y: clamp(y, z.y0 + my0, Math.max(z.y0 + my0, z.y1 - my1)),
     };
   }
 
@@ -106,10 +205,10 @@ export function createInput(canvas, hooks) {
     ev.preventDefault();
     hooks.onFirstTouch?.();
     const { x, y } = point(ev);
-    const btn = buttonAt(x, y);
-    if (btn) {
-      st.pressed = { id: ev.pointerId, btn };
-      press(btn);
+    const hit = buttonAt(x, y);
+    if (hit) {
+      st.pressed = { id: ev.pointerId, ...hit };
+      press(hit.team, hit.btn);
       return;
     }
     try {
@@ -117,81 +216,88 @@ export function createInput(canvas, hooks) {
     } catch (_) { /* synthetic events can't be captured */ }
     if (ev.pointerType === "mouse") {
       if (ev.button !== 0) return;
-      st.aim = { id: ev.pointerId, bx: 0, by: 0, x, y, dragged: true, mouse: true };
+      st.ps[0].aim = { id: ev.pointerId, bx: 0, by: 0, x, y, dragged: true, mouse: true };
       return;
     }
-    if (x < st.W / 2) {
-      if (!st.move) {
-        const b = clampBase(x, y, "left");
-        st.move = { id: ev.pointerId, bx: b.x, by: b.y, x, y };
+    for (const pad of st.L.pads) {
+      const s = st.ps[pad.team];
+      for (const kind of ["move", "aim"]) {
+        if (!inZone(pad.zones[kind], x, y) || s[kind]) continue;
+        const b = clampBase(x, y, pad.zones[kind]);
+        s[kind] = { id: ev.pointerId, bx: b.x, by: b.y, x, y, dragged: false, mouse: false };
+        return;
       }
-    } else if (!st.aim) {
-      const b = clampBase(x, y, "right");
-      st.aim = { id: ev.pointerId, bx: b.x, by: b.y, x, y, dragged: false, mouse: false };
     }
+  }
+
+  function findStick(id) {
+    for (let team = 0; team < 2; team++) {
+      const s = st.ps[team];
+      if (s.move && s.move.id === id) return { team, kind: "move", stick: s.move };
+      if (s.aim && s.aim.id === id) return { team, kind: "aim", stick: s.aim };
+    }
+    return null;
   }
 
   function onMove(ev) {
     if (!st.enabled) return;
+    const f = findStick(ev.pointerId);
+    if (!f) return;
     const { x, y } = point(ev);
-    if (st.move && st.move.id === ev.pointerId) {
-      st.move.x = x;
-      st.move.y = y;
-    } else if (st.aim && st.aim.id === ev.pointerId) {
-      st.aim.x = x;
-      st.aim.y = y;
-      if (!st.aim.mouse && Math.hypot(x - st.aim.bx, y - st.aim.by) > st.L.R * 0.28) {
-        st.aim.dragged = true;
-      }
+    f.stick.x = x;
+    f.stick.y = y;
+    if (f.kind === "aim" && !f.stick.mouse && Math.hypot(x - f.stick.bx, y - f.stick.by) > st.L.R * 0.28) {
+      f.stick.dragged = true;
     }
   }
 
   function onUp(ev) {
     if (st.pressed && st.pressed.id === ev.pointerId) st.pressed = null;
-    if (st.move && st.move.id === ev.pointerId) st.move = null;
-    if (st.aim && st.aim.id === ev.pointerId) {
-      if (st.enabled && ev.type !== "pointercancel") release();
-      st.aim = null;
-    }
+    const f = findStick(ev.pointerId);
+    if (!f) return;
+    if (f.kind === "aim" && st.enabled && ev.type !== "pointercancel") release(f.team);
+    st.ps[f.team][f.kind] = null;
   }
 
-  function release() {
-    const a = aimVector();
-    const mode = hooks.mode();
+  function release(team) {
+    const s = st.ps[team];
+    const a = aimVector(team);
+    const mode = hooks.mode(team);
     const t = mode === "combat" ? "fire" : mode;
-    if (!st.aim.dragged) st.actions.push({ t, tap: true, angle: 0, mag: 0 });
-    else if (a && a.mag > 0.22) st.actions.push({ t, angle: a.angle, mag: a.mag });
+    if (!s.aim.dragged) s.actions.push({ t, tap: true, angle: 0, mag: 0 });
+    else if (a && a.mag > 0.22) s.actions.push({ t, angle: a.angle, mag: a.mag });
     // dragged back into the dead zone: cancelled
   }
 
-  // The live aim as { angle, mag } (mag 0..1), or null.
-  function aimVector() {
-    const a = st.aim;
+  // The live aim for a team as { angle, mag } (mag 0..1), or null.
+  function aimVector(team) {
+    const a = st.ps[team].aim;
     if (!a) return null;
     if (a.mouse) {
-      const pp = hooks.playerScreen();
+      const pp = hooks.playerScreen(team);
       if (!pp) return null;
       const dx = a.x - pp.x;
       const dy = a.y - pp.y;
-      const reach = hooks.tileSize() * 9;
+      const reach = st.L.arena.TS * 9;
       return { angle: Math.atan2(dy, dx), mag: Math.min(1, Math.hypot(dx, dy) / reach) };
     }
     const dx = a.x - a.bx;
     const dy = a.y - a.by;
-    const d = Math.hypot(dx, dy);
-    return { angle: Math.atan2(dy, dx), mag: Math.min(1, d / st.L.R) };
+    return { angle: Math.atan2(dy, dx), mag: Math.min(1, Math.hypot(dx, dy) / st.L.R) };
   }
 
-  function moveVector() {
-    if (st.move) {
-      const dx = st.move.x - st.move.bx;
-      const dy = st.move.y - st.move.by;
+  function moveVector(team) {
+    const m = st.ps[team].move;
+    if (m) {
+      const dx = m.x - m.bx;
+      const dy = m.y - m.by;
       const d = Math.hypot(dx, dy);
       const dead = st.L.R * 0.12;
       if (d < dead) return { x: 0, y: 0 };
-      const m = Math.min(1, (d - dead) / (st.L.R * 0.75));
-      return { x: (dx / d) * m, y: (dy / d) * m };
+      const k = Math.min(1, (d - dead) / (st.L.R * 0.75));
+      return { x: (dx / d) * k, y: (dy / d) * k };
     }
+    if (team !== 0) return { x: 0, y: 0 };
     let x = 0;
     let y = 0;
     const k = st.keys;
@@ -209,32 +315,23 @@ export function createInput(canvas, hooks) {
     if (down) st.keys.add(ev.code);
     else st.keys.delete(ev.code);
     if (!down || ev.repeat) return;
-    const mode = hooks.mode();
+    const mode = hooks.mode(0);
+    const out = st.ps[0].actions;
     switch (ev.code) {
-      case "KeyB":
-        press("build");
-        break;
+      case "KeyB": press(0, "build"); break;
       case "KeyE":
-        if (mode === "combat") st.actions.push({ t: "mode", mode: "edit" });
-        else press("edit");
+        if (mode === "combat") out.push({ t: "mode", mode: "edit" });
+        else press(0, "edit");
         break;
       case "KeyR":
-        if (mode === "combat") st.actions.push({ t: "reload" });
-        else press("reset");
+        if (mode === "combat") out.push({ t: "reload" });
+        else press(0, "reset");
         break;
-      case "Digit1":
-        st.actions.push({ t: "slot", slot: 0 });
-        break;
-      case "Digit2":
-        st.actions.push({ t: "slot", slot: 1 });
-        break;
-      case "KeyQ":
-        st.actions.push({ t: "swap" });
-        break;
+      case "Digit1": out.push({ t: "slot", slot: 0 }); break;
+      case "Digit2": out.push({ t: "slot", slot: 1 }); break;
+      case "KeyQ": out.push({ t: "swap" }); break;
       case "Escape":
-      case "KeyP":
-        hooks.onPause?.();
-        break;
+      case "KeyP": hooks.onPause?.(); break;
     }
   }
 
@@ -247,29 +344,30 @@ export function createInput(canvas, hooks) {
   window.addEventListener("keyup", onKey);
 
   function reset() {
-    st.move = null;
-    st.aim = null;
-    st.actions.length = 0;
+    for (const s of st.ps) {
+      s.move = null;
+      s.aim = null;
+      s.actions.length = 0;
+    }
     st.keys.clear();
     st.pressed = null;
   }
 
-  // The human player's controller.
-  const controller = {
+  const controllers = [0, 1].map((team) => ({
     poll() {
-      const m = moveVector();
-      const a = aimVector();
-      const aiming = !!(st.aim && st.aim.dragged && a && a.mag > 0.22);
-      const actions = st.actions.splice(0);
+      const m = moveVector(team);
+      const a = aimVector(team);
+      const s = st.ps[team];
+      const aiming = !!(s.aim && s.aim.dragged && a && a.mag > 0.22);
       return {
         mx: m.x, my: m.y,
         aiming,
         aimAngle: a ? a.angle : 0,
         aimMag: a ? a.mag : 0,
-        actions,
+        actions: s.actions.splice(0),
       };
     },
-  };
+  }));
 
-  return { st, resize, controller, aimVector, reset };
+  return { st, resize, setPvp, controllers, controller: controllers[0], aimVector, reset };
 }

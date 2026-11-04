@@ -45,7 +45,12 @@ h2.win { color: var(--green); }
 h2.lose { color: var(--red); }
 .score { font-size: 34px; font-weight: 900; margin: 0; }
 
-.menu-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 10px; }
+.menu-grid { display: grid; grid-template-columns: 1.2fr 1fr 0.9fr; gap: 10px; }
+.btn.red { background: linear-gradient(180deg, #ff6b7a, #d63447); border-color: #ff9aa5; box-shadow: 0 4px 0 #801a27; }
+h2.blue { color: var(--blue); }
+.lo-player { flex: 0 0 auto; }
+.lo-player button.on { background: var(--blue); }
+.lo-player button[data-p="1"].on { background: var(--red); }
 .row { display: flex; align-items: center; gap: 12px; }
 .row.foot { justify-content: space-between; margin-top: 2px; }
 .lbl { color: var(--muted); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; width: 64px; }

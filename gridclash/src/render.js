@@ -37,11 +37,10 @@ export function createRenderer(canvas) {
     canvas.height = Math.round(H * dpr);
     canvas.style.width = W + "px";
     canvas.style.height = H + "px";
-    const top = L.top;
-    const pad = 4;
-    v.TS = Math.min((W - pad * 2) / GW, (H - top - pad) / GH);
-    v.ox = Math.round((W - v.TS * GW) / 2);
-    v.oy = Math.round(top + (H - top - pad - v.TS * GH) / 2);
+    // the arena rect comes from the input layout so touch zones and drawing agree
+    v.TS = L.arena.TS;
+    v.ox = L.arena.ox;
+    v.oy = L.arena.oy;
     v.floor = null;
   }
 
@@ -611,76 +610,136 @@ export function createRenderer(canvas) {
     label(`${Math.ceil(p.hp)}`, x + w / 2, y + h / 2 + 0.5, h * 0.68, "#fff");
   }
 
-  function drawHud(g, me, input, meta) {
-    const L = v.L;
-    const u = L.u;
-    const W = v.W;
-    const p = g.players[me];
-    const e = enemyOf(g, p);
-    const mode = p.mode;
+  // Run fn in a pad's own frame: origin at (x, y), rotated to face its player.
+  function inFrame(pad, x, y, fn) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(pad.rot);
+    fn();
+    ctx.restore();
+  }
 
-    // top bar
-    const cx = W / 2;
-    const ty = 20 * u;
-    ctx.fillStyle = "rgba(8,12,20,0.72)";
-    rr(ctx, cx - 120 * u, 4 * u, 240 * u, 32 * u, 16 * u);
-    ctx.fill();
-    ctx.fillStyle = TEAM[0].main;
-    rr(ctx, cx - 116 * u, 8 * u, 46 * u, 24 * u, 12 * u);
-    ctx.fill();
-    ctx.fillStyle = TEAM[1].main;
-    rr(ctx, cx + 70 * u, 8 * u, 46 * u, 24 * u, 12 * u);
-    ctx.fill();
-    label(String(g.score[0]), cx - 93 * u, ty, 17 * u);
-    label(String(g.score[1]), cx + 93 * u, ty, 17 * u);
-    const tl = Math.max(0, Math.ceil(g.timeLeft));
-    label(`${Math.floor(tl / 60)}:${String(tl % 60).padStart(2, "0")}`, cx, ty - 4 * u, 14 * u, tl <= 10 ? "#ff7a7a" : "#fff");
-    label(`ROUND ${g.round} · FIRST TO 3`, cx, ty + 9 * u, 7.5 * u, "rgba(255,255,255,0.6)", "center", 700);
-
-    // HP bars
-    const hw = Math.min(170 * u, cx - 140 * u - 14 * u);
-    label(meta.names[me], 14 * u, 12 * u, 9 * u, TEAM[me].light, "left", 800);
-    hpBar(12 * u, 18 * u, hw, 16 * u, p, "left");
-    const ew = Math.min(hw, 104 * u);
-    label(meta.names[1 - me], W - 56 * u, 12 * u, 9 * u, TEAM[1 - me].light, "right", 800);
-    hpBar(W - 54 * u - ew, 18 * u, ew, 16 * u, e, "right");
-
-    // pause
+  function drawPause() {
+    const P = v.L.pause;
     ctx.fillStyle = "rgba(8,12,20,0.7)";
     ctx.beginPath();
-    ctx.arc(L.pause.x, L.pause.y, L.pause.r, 0, Math.PI * 2);
+    ctx.arc(P.x, P.y, P.r, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = "#fff";
-    ctx.fillRect(L.pause.x - 6 * u, L.pause.y - 7 * u, 4 * u, 14 * u);
-    ctx.fillRect(L.pause.x + 2 * u, L.pause.y - 7 * u, 4 * u, 14 * u);
+    const bw = P.r * 0.22;
+    const bh = P.r * 0.75;
+    ctx.fillRect(P.x - bw * 1.5, P.y - bh / 2, bw, bh);
+    ctx.fillRect(P.x + bw * 0.5, P.y - bh / 2, bw, bh);
+  }
 
-    drawSticks(g, p, input, mode);
-    drawButtons(g, p, mode);
+  function timerText(g) {
+    const tl = Math.max(0, Math.ceil(g.timeLeft));
+    return `${Math.floor(tl / 60)}:${String(tl % 60).padStart(2, "0")}`;
+  }
 
-    // banners
+  // Round countdown / FIGHT! / round result, from one player's point of view.
+  function drawBanner(g, me, x, y, rot, s, bandLen) {
+    const u = v.L.u * s;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
     if (g.state === "countdown") {
       const n = Math.ceil(g.stateT);
       const k = g.stateT - Math.floor(g.stateT);
       ctx.globalAlpha = Math.min(1, k * 2 + 0.2);
-      label(String(n), cx, v.H * 0.42, (60 + k * 30) * u, "#fff", "center", 900);
+      label(String(n), 0, 0, (60 + k * 30) * u, "#fff", "center", 900);
       ctx.globalAlpha = 1;
-      label(`ROUND ${g.round}`, cx, v.H * 0.42 + 50 * u, 14 * u, "rgba(255,255,255,0.8)");
+      label(`ROUND ${g.round}`, 0, 50 * u, 14 * u, "rgba(255,255,255,0.8)");
     } else if (g.state === "fight" && g.timeLeft > 89) {
       ctx.globalAlpha = Math.max(0, g.timeLeft - 89);
-      label("FIGHT!", cx, v.H * 0.42, 56 * u, "#ffd23f", "center", 900);
+      label("FIGHT!", 0, 0, 56 * u, "#ffd23f", "center", 900);
       ctx.globalAlpha = 1;
     } else if (g.state === "roundEnd") {
       const won = g.roundWinner === me;
       const txt = g.roundWinner < 0 ? "DRAW" : won ? "ROUND WON" : "ROUND LOST";
       ctx.fillStyle = "rgba(8,12,20,0.55)";
-      ctx.fillRect(0, v.H * 0.42 - 34 * u, W, 68 * u);
-      label(txt, cx, v.H * 0.42, 34 * u, g.roundWinner < 0 ? "#fff" : won ? "#6dff9a" : "#ff6b6b", "center", 900);
+      ctx.fillRect(-bandLen / 2, -34 * u, bandLen, 68 * u);
+      label(txt, 0, 0, 34 * u, g.roundWinner < 0 ? "#fff" : won ? "#6dff9a" : "#ff6b6b", "center", 900);
     }
-    if (g.state === "fight" && mode !== "combat") {
-      ctx.fillStyle = mode === "edit" ? "rgba(255,210,63,0.9)" : "rgba(90,255,150,0.9)";
-      rr(ctx, cx - 50 * u, 40 * u, 100 * u, 18 * u, 9 * u);
+    ctx.restore();
+  }
+
+  function drawHud(g, input, meta) {
+    const L = v.L;
+    const u = L.u;
+    const W = v.W;
+    const H = v.H;
+    const cx = W / 2;
+
+    if (!L.pvp) {
+      const me = meta.humans[0] ?? 0;
+      const p = g.players[me];
+      const e = enemyOf(g, p);
+      // top bar
+      const ty = 20 * u;
+      ctx.fillStyle = "rgba(8,12,20,0.72)";
+      rr(ctx, cx - 120 * u, 4 * u, 240 * u, 32 * u, 16 * u);
       ctx.fill();
-      label(mode === "edit" ? "EDIT MODE" : "BUILD MODE", cx, 49 * u, 9 * u, "#0b1220", "center", 900);
+      ctx.fillStyle = TEAM[0].main;
+      rr(ctx, cx - 116 * u, 8 * u, 46 * u, 24 * u, 12 * u);
+      ctx.fill();
+      ctx.fillStyle = TEAM[1].main;
+      rr(ctx, cx + 70 * u, 8 * u, 46 * u, 24 * u, 12 * u);
+      ctx.fill();
+      label(String(g.score[0]), cx - 93 * u, ty, 17 * u);
+      label(String(g.score[1]), cx + 93 * u, ty, 17 * u);
+      label(timerText(g), cx, ty - 4 * u, 14 * u, g.timeLeft <= 10 ? "#ff7a7a" : "#fff");
+      label(`ROUND ${g.round} · FIRST TO 3`, cx, ty + 9 * u, 7.5 * u, "rgba(255,255,255,0.6)", "center", 700);
+      // HP bars
+      const hw = Math.min(170 * u, cx - 140 * u - 14 * u);
+      label(meta.names[me], 14 * u, 12 * u, 9 * u, TEAM[me].light, "left", 800);
+      hpBar(12 * u, 18 * u, hw, 16 * u, p, "left");
+      const ew = Math.min(hw, 104 * u);
+      label(meta.names[1 - me], W - 56 * u, 12 * u, 9 * u, TEAM[1 - me].light, "right", 800);
+      hpBar(W - 54 * u - ew, 18 * u, ew, 16 * u, e, "right");
+    } else {
+      // shared screen: a compact score pill both players can read
+      ctx.fillStyle = "rgba(8,12,20,0.78)";
+      rr(ctx, cx - 70 * u, 1 * u, 140 * u, 16 * u, 8 * u);
+      ctx.fill();
+      ctx.fillStyle = TEAM[0].main;
+      rr(ctx, cx - 68 * u, 3 * u, 26 * u, 12 * u, 6 * u);
+      ctx.fill();
+      ctx.fillStyle = TEAM[1].main;
+      rr(ctx, cx + 42 * u, 3 * u, 26 * u, 12 * u, 6 * u);
+      ctx.fill();
+      label(String(g.score[0]), cx - 55 * u, 9.5 * u, 10 * u);
+      label(String(g.score[1]), cx + 55 * u, 9.5 * u, 10 * u);
+      label(`${timerText(g)} · R${g.round}`, cx, 9.5 * u, 9 * u, g.timeLeft <= 10 ? "#ff7a7a" : "#fff");
+      // each player's health as a strip along their own edge of the phone
+      g.players.forEach((p, i) => {
+        const len = H * 0.7;
+        const x = i === 0 ? 0 : W - 5 * u;
+        ctx.fillStyle = "rgba(255,255,255,0.08)";
+        ctx.fillRect(x, (H - len) / 2, 5 * u, len);
+        const k = p.hp / MAX_HP;
+        ctx.fillStyle = TEAM[i].main;
+        ctx.fillRect(x, (H - len * k) / 2, 5 * u, len * k);
+      });
+    }
+
+    drawPause();
+    // buttons first so a dragged stick knob stays visible on top of them
+    for (const pad of L.pads) drawButtons(g, g.players[pad.team], pad);
+    for (const pad of L.pads) drawSticks(g, g.players[pad.team], input, pad);
+
+    if (!L.pvp) {
+      const me = meta.humans[0] ?? 0;
+      drawBanner(g, me, cx, H * 0.42, 0, 1, W);
+      const mode = g.players[me].mode;
+      if (g.state === "fight" && mode !== "combat") {
+        ctx.fillStyle = mode === "edit" ? "rgba(255,210,63,0.9)" : "rgba(90,255,150,0.9)";
+        rr(ctx, cx - 50 * u, 40 * u, 100 * u, 18 * u, 9 * u);
+        ctx.fill();
+        label(mode === "edit" ? "EDIT MODE" : "BUILD MODE", cx, 49 * u, 9 * u, "#0b1220", "center", 900);
+      }
+    } else {
+      for (const pad of L.pads) drawBanner(g, pad.team, pad.center.x, pad.center.y, pad.rot, 0.62, H);
     }
   }
 
@@ -694,63 +753,56 @@ export function createRenderer(canvas) {
     ctx.stroke();
   }
 
-  function drawSticks(g, p, input, mode) {
+  function knobPos(stick, base, R) {
+    if (!stick) return base;
+    const dx = stick.x - stick.bx;
+    const dy = stick.y - stick.by;
+    const d = Math.hypot(dx, dy);
+    const c = Math.min(d, R);
+    return d > 0 ? { x: base.x + (dx / d) * c, y: base.y + (dy / d) * c } : base;
+  }
+
+  function drawSticks(g, p, input, pad) {
     const L = v.L;
-    const st = input.st;
+    const u = L.u;
     const R = L.R;
+    const mode = p.mode;
+    const s = (input.st.ps && input.st.ps[pad.team]) || {};
     // move
-    const m = st.move;
-    const mb = m ? { x: m.bx, y: m.by } : L.move;
-    drawStickBase(mb.x, mb.y, R, !!m, "rgba(255,255,255,0.5)");
-    let kx = mb.x;
-    let ky = mb.y;
-    if (m) {
-      const dx = m.x - m.bx;
-      const dy = m.y - m.by;
-      const d = Math.hypot(dx, dy);
-      const c = Math.min(d, R);
-      if (d > 0) {
-        kx += (dx / d) * c;
-        ky += (dy / d) * c;
-      }
-    }
-    ctx.fillStyle = m ? "rgba(255,255,255,0.75)" : "rgba(255,255,255,0.35)";
+    const m = s.move;
+    const mb = m ? { x: m.bx, y: m.by } : pad.move;
+    drawStickBase(mb.x, mb.y, R, !!m, L.pvp ? TEAM[pad.team].main : "rgba(255,255,255,0.5)");
+    const mk = knobPos(m, mb, R);
+    ctx.fillStyle = m ? "rgba(255,255,255,0.75)" : L.pvp ? TEAM[pad.team].main : "rgba(255,255,255,0.35)";
+    ctx.globalAlpha = m || !L.pvp ? 1 : 0.6;
     ctx.beginPath();
-    ctx.arc(kx, ky, R * 0.42, 0, Math.PI * 2);
+    ctx.arc(mk.x, mk.y, R * 0.42, 0, Math.PI * 2);
     ctx.fill();
-    if (!m) label("MOVE", mb.x, mb.y + R + 12 * L.u, 9 * L.u, "rgba(255,255,255,0.45)");
+    ctx.globalAlpha = 1;
+    if (!m) inFrame(pad, mb.x, mb.y, () => label("MOVE", 0, R + 12 * u, 9 * u, "rgba(255,255,255,0.45)"));
 
     // aim / build / edit
-    const a = st.aim && !st.aim.mouse ? st.aim : null;
-    const ab = a ? { x: a.bx, y: a.by } : L.aim;
+    const a = s.aim && !s.aim.mouse ? s.aim : null;
+    const ab = a ? { x: a.bx, y: a.by } : pad.aim;
     const tint = mode === "combat" ? "#ff6b6b" : mode === "build" ? "#5aff96" : "#ffd23f";
     drawStickBase(ab.x, ab.y, R, !!a, tint);
-    let ax = ab.x;
-    let ay = ab.y;
-    if (a) {
-      const dx = a.x - a.bx;
-      const dy = a.y - a.by;
-      const d = Math.hypot(dx, dy);
-      const c = Math.min(d, R);
-      if (d > 0) {
-        ax += (dx / d) * c;
-        ay += (dy / d) * c;
-      }
-      if (a.dragged && d < R * 0.22) {
-        label("CANCEL", ab.x, ab.y - R - 12 * L.u, 9 * L.u, "rgba(255,255,255,0.7)");
-      }
+    const ak = knobPos(a, ab, R);
+    if (a && a.dragged && Math.hypot(a.x - a.bx, a.y - a.by) < R * 0.22) {
+      inFrame(pad, ab.x, ab.y, () => label("CANCEL", 0, -R - 12 * u, 9 * u, "rgba(255,255,255,0.7)"));
     }
     const kr = R * 0.46;
     ctx.fillStyle = tint;
     ctx.globalAlpha = a ? 0.95 : 0.7;
     ctx.beginPath();
-    ctx.arc(ax, ay, kr, 0, Math.PI * 2);
+    ctx.arc(ak.x, ak.y, kr, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 1;
-    drawModeIcon(ax, ay, kr * 0.62, mode, "#0b1220");
+    inFrame(pad, ak.x, ak.y, () => drawModeIcon(0, 0, kr * 0.62, mode, "#0b1220"));
     if (!a) {
-      const word = mode === "combat" ? "AIM · RELEASE TO SHOOT" : mode === "build" ? "DRAG · RELEASE TO BUILD" : "AIM AT YOUR WALL · RELEASE";
-      label(word, ab.x, ab.y + R + 12 * L.u, 8 * L.u, "rgba(255,255,255,0.45)");
+      const word = L.pvp
+        ? mode === "combat" ? "AIM · RELEASE" : mode === "build" ? "RELEASE TO BUILD" : "AIM AT WALL"
+        : mode === "combat" ? "AIM · RELEASE TO SHOOT" : mode === "build" ? "DRAG · RELEASE TO BUILD" : "AIM AT YOUR WALL · RELEASE";
+      inFrame(pad, ab.x, ab.y, () => label(word, 0, R + 12 * u, 8 * u, "rgba(255,255,255,0.45)"));
     }
   }
 
@@ -797,95 +849,108 @@ export function createRenderer(canvas) {
     ctx.fillRect(x - bw / 2, y + gap / 2, bw, bh);
   }
 
-  function drawButtons(g, p, mode) {
-    const L = v.L;
-    const u = L.u;
-    const B = L.build;
-    // BUILD toggle (sits over the attack stick)
+  function drawButtons(g, p, pad) {
+    const u = v.L.u;
+    const B = pad.build;
+    const mode = p.mode;
+    // BUILD toggle (sits over the attack stick, from its player's point of view)
     const on = mode !== "combat";
-    ctx.fillStyle = on ? "#5aff96" : "rgba(8,12,20,0.75)";
-    ctx.beginPath();
-    ctx.arc(B.x, B.y, B.r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = on ? "#c8ffdd" : "rgba(90,255,150,0.7)";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    if (on) drawModeIcon(B.x, B.y - 4 * u, B.r * 0.42, "combat", "#0b1220");
-    else brick(B.x, B.y - 4 * u, B.r * 0.4, "#5aff96");
-    label(on ? "FIGHT" : "BUILD", B.x, B.y + B.r * 0.55, 8 * u, on ? "#0b1220" : "#5aff96", "center", 900);
-    // materials under it
-    const mats = Math.floor(p.mats);
-    const mx = B.x - B.r - 10 * u;
-    label(`▰ ${mats}`, mx, B.y - 5 * u, 11 * u, mats >= WALL_COST ? "#cfe9ff" : "#ff8080", "right", 900);
-    label(`wall ${WALL_COST}`, mx, B.y + 9 * u, 7.5 * u, "rgba(255,255,255,0.5)", "right", 700);
-    ctx.fillStyle = "rgba(255,255,255,0.15)";
-    ctx.fillRect(mx - 40 * u, B.y + 17 * u, 40 * u, 3 * u);
-    ctx.fillStyle = "#cfe9ff";
-    ctx.fillRect(mx - 40 * u, B.y + 17 * u, 40 * u * (p.mats / MAX_MATS), 3 * u);
+    inFrame(pad, B.x, B.y, () => {
+      ctx.fillStyle = on ? "#5aff96" : "rgba(8,12,20,0.75)";
+      ctx.beginPath();
+      ctx.arc(0, 0, B.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = on ? "#c8ffdd" : "rgba(90,255,150,0.7)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      if (on) drawModeIcon(0, -B.r * 0.12, B.r * 0.42, "combat", "#0b1220");
+      else brick(0, -B.r * 0.12, B.r * 0.4, "#5aff96");
+      label(on ? "FIGHT" : "BUILD", 0, B.r * 0.55, Math.min(8 * u, B.r * 0.28), on ? "#0b1220" : "#5aff96", "center", 900);
+      // materials beside it
+      const mats = Math.floor(p.mats);
+      const mx = -B.r - 10 * u;
+      label(`▰ ${mats}`, mx, -5 * u, 11 * u, mats >= WALL_COST ? "#cfe9ff" : "#ff8080", "right", 900);
+      label(`wall ${WALL_COST}`, mx, 9 * u, 7.5 * u, "rgba(255,255,255,0.5)", "right", 700);
+      ctx.fillStyle = "rgba(255,255,255,0.15)";
+      ctx.fillRect(mx - 40 * u, 17 * u, 40 * u, 3 * u);
+      ctx.fillStyle = "#cfe9ff";
+      ctx.fillRect(mx - 40 * u, 17 * u, 40 * u * (p.mats / MAX_MATS), 3 * u);
+    });
 
-    const slots = [L.slot0, L.slot1];
+    const slots = [pad.slot0, pad.slot1];
+    // r is the slot rect in the pad's own frame, centred on the origin
+    const frameRect = (s) => ({ x: -s.lw / 2, y: -s.lh / 2, w: s.lw, h: s.lh });
     if (mode === "combat") {
-      p.guns.forEach((gun, i) => {
-        const r = slots[i];
+      p.guns.forEach((gun, i) => inFrame(pad, slots[i].cx, slots[i].cy, () => {
+        const r = frameRect(slots[i]);
         const active = i === p.slot;
         const tier = TIER_COLOR[gun.def.tier];
+        const s = r.h / 34; // text scale relative to the solo-mode slot
         ctx.fillStyle = active ? "rgba(20,28,44,0.92)" : "rgba(8,12,20,0.6)";
-        rr(ctx, r.x, r.y, r.w, r.h, 8 * u);
+        rr(ctx, r.x, r.y, r.w, r.h, 8 * u * s);
         ctx.fill();
         ctx.strokeStyle = active ? tier : "rgba(255,255,255,0.15)";
         ctx.lineWidth = active ? 2.5 : 1;
         ctx.stroke();
         ctx.fillStyle = gun.def.color;
-        rr(ctx, r.x + 6 * u, r.y + r.h / 2 - 4 * u, 16 * u, 8 * u, 3 * u);
+        rr(ctx, r.x + 6 * u * s, r.y + r.h / 2 - 4 * u * s, 16 * u * s, 8 * u * s, 3 * u * s);
         ctx.fill();
         const name = gun.def.name.toUpperCase();
-        ctx.font = `800 ${Math.round(8.5 * u)}px system-ui, sans-serif`;
-        const fit = Math.min(1, (r.w - 34 * u) / ctx.measureText(name).width);
-        label(name, r.x + 28 * u, r.y + r.h * 0.34, 8.5 * u * fit, active ? "#fff" : "rgba(255,255,255,0.65)", "left", 800);
+        const tx = r.x + 28 * u * s;
+        ctx.font = `800 ${Math.round(8.5 * u * s)}px system-ui, sans-serif`;
+        const fit = Math.min(1, (r.w - 34 * u * s) / ctx.measureText(name).width);
+        label(name, tx, r.y + r.h * 0.34, 8.5 * u * s * fit, active ? "#fff" : "rgba(255,255,255,0.65)", "left", 800);
         const reloading = active && p.reloadT > 0;
         const txt = reloading ? "RELOADING…" : `${gun.ammo} / ${gun.def.mag}`;
-        label(txt, r.x + 28 * u, r.y + r.h * 0.7, 9.5 * u, gun.ammo === 0 || reloading ? "#ffb36b" : tier, "left", 800);
+        label(txt, tx, r.y + r.h * 0.7, 9.5 * u * s, gun.ammo === 0 || reloading ? "#ffb36b" : tier, "left", 800);
         if (reloading) {
           const k = 1 - p.reloadT / gun.def.reload;
           ctx.fillStyle = "#ffb36b";
-          ctx.fillRect(r.x + 6 * u, r.y + r.h - 4 * u, (r.w - 12 * u) * k, 2 * u);
+          ctx.fillRect(r.x + 6 * u, r.y + r.h - 4 * u * s, (r.w - 12 * u) * k, 2 * u);
         } else if (active && p.cd > 0) {
           const k = p.cd / (gun.def.cd + (gun.def.burst - 1) * gun.def.gap);
           ctx.fillStyle = "rgba(255,255,255,0.35)";
-          ctx.fillRect(r.x + 6 * u, r.y + r.h - 4 * u, (r.w - 12 * u) * k, 2 * u);
+          ctx.fillRect(r.x + 6 * u, r.y + r.h - 4 * u * s, (r.w - 12 * u) * k, 2 * u);
         }
-      });
+      }));
     } else {
       // EDIT toggle
-      const r0 = slots[0];
-      const editing = mode === "edit";
-      ctx.fillStyle = editing ? "#ffd23f" : "rgba(8,12,20,0.75)";
-      rr(ctx, r0.x, r0.y, r0.w, r0.h, 8 * u);
-      ctx.fill();
-      ctx.strokeStyle = "#ffd23f";
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      drawModeIcon(r0.x + 18 * u, r0.y + r0.h / 2, 7 * u, "edit", editing ? "#0b1220" : "#ffd23f");
-      label(editing ? "EDITING" : "EDIT", r0.x + 32 * u, r0.y + r0.h * 0.38, 10 * u, editing ? "#0b1220" : "#ffd23f", "left", 900);
-      label(editing ? "tap: back to build" : "cut / restore a tile", r0.x + 32 * u, r0.y + r0.h * 0.72, 7 * u, editing ? "rgba(11,18,32,0.75)" : "rgba(255,255,255,0.6)", "left", 700);
+      inFrame(pad, slots[0].cx, slots[0].cy, () => {
+        const r = frameRect(slots[0]);
+        const s = r.h / 34;
+        const editing = mode === "edit";
+        ctx.fillStyle = editing ? "#ffd23f" : "rgba(8,12,20,0.75)";
+        rr(ctx, r.x, r.y, r.w, r.h, 8 * u * s);
+        ctx.fill();
+        ctx.strokeStyle = "#ffd23f";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        drawModeIcon(r.x + 18 * u * s, 0, 7 * u * s, "edit", editing ? "#0b1220" : "#ffd23f");
+        label(editing ? "EDITING" : "EDIT", r.x + 32 * u * s, r.y + r.h * 0.38, 10 * u * s, editing ? "#0b1220" : "#ffd23f", "left", 900);
+        label(editing ? "tap: back to build" : "cut / restore a tile", r.x + 32 * u * s, r.y + r.h * 0.72, 7 * u * s, editing ? "rgba(11,18,32,0.75)" : "rgba(255,255,255,0.6)", "left", 700);
+      });
       // RESET
-      const r1 = slots[1];
-      const any = !!nearestEditedWall(g, p);
-      ctx.fillStyle = "rgba(8,12,20,0.75)";
-      rr(ctx, r1.x, r1.y, r1.w, r1.h, 8 * u);
-      ctx.fill();
-      ctx.strokeStyle = any ? "#8fd3ff" : "rgba(255,255,255,0.15)";
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      label("↺", r1.x + 18 * u, r1.y + r1.h / 2, 16 * u, any ? "#8fd3ff" : "rgba(255,255,255,0.3)", "center", 900);
-      label("RESET", r1.x + 32 * u, r1.y + r1.h * 0.38, 10 * u, any ? "#8fd3ff" : "rgba(255,255,255,0.35)", "left", 900);
-      label("restore nearest edit", r1.x + 32 * u, r1.y + r1.h * 0.72, 7 * u, "rgba(255,255,255,0.5)", "left", 700);
+      inFrame(pad, slots[1].cx, slots[1].cy, () => {
+        const r = frameRect(slots[1]);
+        const s = r.h / 34;
+        const any = !!nearestEditedWall(g, p);
+        ctx.fillStyle = "rgba(8,12,20,0.75)";
+        rr(ctx, r.x, r.y, r.w, r.h, 8 * u * s);
+        ctx.fill();
+        ctx.strokeStyle = any ? "#8fd3ff" : "rgba(255,255,255,0.15)";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        label("↺", r.x + 18 * u * s, 0, 16 * u * s, any ? "#8fd3ff" : "rgba(255,255,255,0.3)", "center", 900);
+        label("RESET", r.x + 32 * u * s, r.y + r.h * 0.38, 10 * u * s, any ? "#8fd3ff" : "rgba(255,255,255,0.35)", "left", 900);
+        label("restore nearest edit", r.x + 32 * u * s, r.y + r.h * 0.72, 7 * u * s, "rgba(255,255,255,0.5)", "left", 700);
+      });
     }
   }
 
   // ---- frame -----------------------------------------------------------------------
 
-  function draw(g, me, input, meta) {
+  // meta: { names, humans: [team...] (whose previews to show), }
+  function draw(g, input, meta) {
     ctx.setTransform(v.dpr, 0, 0, v.dpr, 0, 0);
     ctx.fillStyle = "#0b0f18";
     ctx.fillRect(0, 0, v.W, v.H);
@@ -899,16 +964,18 @@ export function createRenderer(canvas) {
     ctx.drawImage(v.floor, v.ox, v.oy, GW * v.TS, GH * v.TS);
     drawMedkits(g);
     drawWalls(g);
-    const p = g.players[me];
-    drawBuildPreview(g, p);
-    drawEditPreview(g, p);
-    drawAimPreview(g, p);
+    for (const i of meta.humans) {
+      const p = g.players[i];
+      drawBuildPreview(g, p);
+      drawEditPreview(g, p);
+      drawAimPreview(g, p);
+    }
     drawBullets(g);
     for (const q of g.players) drawPlayer(g, q);
     drawFx(g);
     ctx.restore();
 
-    drawHud(g, me, input, meta);
+    drawHud(g, input, meta);
   }
 
   return {

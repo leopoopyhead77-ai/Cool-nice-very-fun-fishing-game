@@ -4,8 +4,13 @@ A 1v1 shoot-and-build arena for phones, played in landscape on a **30×20 grid**
 You spawn on the left, your opponent on the right. Shoot, throw up walls, cut
 windows into them, and win 3 rounds first.
 
-Right now the opponent is a bot (**PvB**). Online play is planned; see
-[Online play](#online-play-next) below.
+Two modes today:
+
+- **Play vs Bot (PvB)**: you against an AI opponent, on Easy, Normal or Hard.
+- **2 Players, same phone (local PvP)**: lay the phone flat and play a friend,
+  one player at each end.
+
+Online play is planned; see [Online play](#online-play-next) below.
 
 - **`dist/grid-clash.apk`**: the Android app (≈80 KB, landscape, offline, minSdk 24).
 - **`dist/index.html`**: the same game as one self-contained web page.
@@ -28,7 +33,17 @@ app is signed with its own key rather than coming from the Play Store.
 | **Weapon slots** (top right) | Tap to switch guns. Tap the active one to reload. |
 | **Pause** | Top-right corner, or the Android back button. |
 
-Keyboard and mouse also work in a browser: WASD to move, mouse to aim (release to
+### 2 Players on one phone
+
+Lay the phone flat on a table in landscape. **Blue sits at the left end, Red at the right end** (the phone's top and bottom edges).
+
+- Each player owns their half of the screen: **left thumb on the move stick, right thumb on the aim stick**.
+- Your BUILD button, weapon slots / EDIT / RESET and materials counter are on your side, turned to face you.
+- Sticks follow board directions: push toward where you want to go or shoot on the shared arena.
+- Your health is the coloured strip along your edge of the phone. The score and timer are in the pill at the top centre, and pause is at the bottom centre.
+- On the loadout screen, switch to the **P2 · Red** tab to pick Red's two guns.
+
+Keyboard and mouse also work in a browser (player 1 only): WASD to move, mouse to aim (release to
 fire), B to build, E to edit, R to reset or reload, 1/2 or Q to switch weapons, Esc to pause.
 
 ## Building
@@ -93,7 +108,7 @@ src/game.js     match simulation: players, weapons, projectiles, builds, edits, 
 src/world.js    the 30×20 grid, map, raycasts, collision, wall placement and editing
 src/guns.js     the 12 guns as data
 src/bot.js      PvB AI
-src/input.js    twin joysticks, BUILD / EDIT / RESET / weapon buttons, keyboard + mouse
+src/input.js    twin joysticks for 1 or 2 players, BUILD / EDIT / RESET / weapon buttons, keyboard + mouse
 src/render.js   canvas renderer, trajectory and build/edit previews, HUD
 src/audio.js    synthesized sound effects + vibration
 src/main.js     menus, loadout screen, game loop
@@ -106,7 +121,7 @@ build/          bundler, APK script, icon renderer, tests
 ```bash
 npm ci
 npm run clash:build   # → gridclash/dist/index.html
-npm run clash:test    # bot-vs-bot sims for every gun and difficulty + touch-driven browser test
+npm run clash:test    # bot-vs-bot sims for every gun and difficulty + touch-driven browser test (solo and 2-player)
 npm run clash:apk     # → gridclash/dist/grid-clash.apk (needs Android SDK build-tools 34 + platform 34 in $ANDROID_HOME)
 ```
 
