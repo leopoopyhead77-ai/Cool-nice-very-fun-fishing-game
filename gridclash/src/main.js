@@ -168,6 +168,7 @@ app.innerHTML = `
   </section>
 
   <div id="rotate"><div>⟳</div><p>Rotate your phone to landscape</p></div>
+  <div id="safe"></div>
 `;
 
 const $ = (id) => document.getElementById(id);
@@ -454,9 +455,19 @@ function startMatch(mode = matchMode) {
   show(null);
 }
 
+// The notch / rounded corners / home bar: keep the game inside the safe area.
+function safeInsets() {
+  const cs = getComputedStyle($("safe"));
+  const px = (v) => parseFloat(v) || 0;
+  return { t: px(cs.paddingTop), r: px(cs.paddingRight), b: px(cs.paddingBottom), l: px(cs.paddingLeft) };
+}
+
 function resize() {
-  const W = window.innerWidth;
-  const H = window.innerHeight;
+  const ins = safeInsets();
+  const W = Math.max(1, window.innerWidth - ins.l - ins.r);
+  const H = Math.max(1, window.innerHeight - ins.t - ins.b);
+  canvas.style.left = ins.l + "px";
+  canvas.style.top = ins.t + "px";
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   input.resize(W, H);
   renderer.resize(W, H, dpr, input.st.L);
@@ -764,6 +775,19 @@ function leaveOnline(reason) {
   matchMode = "bot";
   local = 0;
   openOnline(reason);
+}
+
+// iOS Safari only lets audio start from touchend / click
+for (const ev of ["touchend", "click"]) document.addEventListener(ev, unlockAudio, { passive: true });
+
+// iPhone in the Safari browser (not yet added to the home screen): show how to install
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const standalone = navigator.standalone || window.matchMedia?.("(display-mode: standalone)").matches || window.matchMedia?.("(display-mode: fullscreen)").matches;
+if (isIOS && !standalone && location.protocol.startsWith("http")) {
+  const hint = document.createElement("p");
+  hint.className = "ios-hint";
+  hint.innerHTML = "📲 For full screen: tap <b>Share</b> → <b>Add to Home Screen</b>, then open Grid Clash from your home screen.";
+  document.querySelector("#menu .menu-card").appendChild(hint);
 }
 
 resize();

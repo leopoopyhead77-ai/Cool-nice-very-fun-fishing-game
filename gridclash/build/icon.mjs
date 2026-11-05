@@ -46,7 +46,7 @@ for (const [dir, size] of Object.entries(SIZES)) {
   mkdirSync(out, { recursive: true });
   const page = await browser.newPage({ viewport: { width: size, height: size } });
   await page.setContent(`<body style="margin:0;background:transparent">${svg(size)}</body>`);
-  await page.screenshot({ path: resolve(out, "ic_launcher.png"), omitBackground: true });
+  await page.screenshot({ path: resolve(out, "ic_launcher.png"), omitBackground: true, timeout: 60000 });
   await page.close();
   console.log(`${dir}/ic_launcher.png  ${size}x${size}`);
 }
@@ -55,8 +55,24 @@ for (const [dir, size] of Object.entries(SIZES)) {
   mkdirSync(out, { recursive: true });
   const page = await browser.newPage({ viewport: { width: size, height: size } });
   await page.setContent(`<body style="margin:0;background:transparent">${svgOnline(size)}</body>`);
-  await page.screenshot({ path: resolve(out, "ic_launcher.png"), omitBackground: true });
+  await page.screenshot({ path: resolve(out, "ic_launcher.png"), omitBackground: true, timeout: 60000 });
   await page.close();
   console.log(`online ${dir}/ic_launcher.png  ${size}x${size}`);
 }
+// web app icons (iPhone home screen + Android/PWA), into <repo>/docs
+const WEB = { 180: "icon-180.png", 192: "icon-192.png", 512: "icon-512.png" };
+for (const [folder, art] of [["play", svg], ["online", svgOnline]]) {
+  const out = resolve(root, "../docs", folder);
+  mkdirSync(out, { recursive: true });
+  for (const [size, file] of Object.entries(WEB)) {
+    const page = await browser.newPage({ viewport: { width: Number(size), height: Number(size) } });
+    // iOS rounds the corners itself, so the web icons are full-bleed squares
+    const square = art(Number(size)).replace('rx="40"', 'rx="0"');
+    await page.setContent(`<body style="margin:0;background:#0b0f18">${square}</body>`);
+    await page.screenshot({ path: resolve(out, file), timeout: 60000 });
+    await page.close();
+    console.log(`docs/${folder}/${file}`);
+  }
+}
+
 await browser.close();

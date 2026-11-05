@@ -15,7 +15,18 @@ html, body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   user-select: none; -webkit-user-select: none; touch-action: none; overscroll-behavior: none;
 }
-#app, #cv { position: fixed; inset: 0; }
+#app { position: fixed; inset: 0; }
+/* positioned and sized from JS to the safe area (iPhone notch / home bar) */
+#cv { position: fixed; left: 0; top: 0; }
+#safe {
+  position: fixed; visibility: hidden; pointer-events: none; left: 0; top: 0;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+html, body { -webkit-touch-callout: none; }
+.ios-hint {
+  margin: 0; font-size: 12px; color: var(--gold); font-weight: 700;
+  background: rgba(255, 210, 63, 0.1); border-radius: 10px; padding: 8px 10px;
+}
 #cv { display: block; touch-action: none; }
 
 .screen {
@@ -45,7 +56,7 @@ h2.win { color: var(--green); }
 h2.lose { color: var(--red); }
 .score { font-size: 34px; font-weight: 900; margin: 0; }
 
-.menu-grid { display: grid; grid-template-columns: 1.2fr 1fr 0.9fr; gap: 10px; }
+.menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .btn.red { background: linear-gradient(180deg, #ff6b7a, #d63447); border-color: #ff9aa5; box-shadow: 0 4px 0 #801a27; }
 h2.blue { color: var(--blue); }
 .lo-player { flex: 0 0 auto; }

@@ -13,6 +13,22 @@ package names, so you can install both:
 
 Each app also exists as a single self-contained web page: `dist/index.html` and `dist/online/index.html`.
 
+## iPhone (no App Store needed)
+
+iPhones can't install APKs, so both games also come as **web apps** that you install from Safari. The website is built into [`/docs`](../docs) and hosted free on GitHub Pages:
+
+**https://leopoopyhead77-ai.github.io/Cool-nice-very-fun-fishing-game/**
+
+1. Open that link in **Safari** on the iPhone and tap a game.
+2. Tap **Share** → **Add to Home Screen** → **Add**.
+3. Open it from the home screen. It runs full screen like an app, stays clear of the notch and home bar, and the local game works offline.
+
+Online rooms work across platforms: iPhones on the website and Android phones with the APK can play in the same room with the same PIN.
+
+**One-time setup (repo owner):** turn on GitHub Pages in the repo's **Settings → Pages**. Under **Build and deployment**, set **Source** to *Deploy from a branch*, **Branch** to `claude/two-player-game-shoot-build-lw3edo`, and **Folder** to `/docs`, then click **Save**. After that, the link above goes live within a minute or two. If the branch is merged into another branch later, point Pages at that branch instead.
+
+Any static host works too. For example, you can drag the `docs` folder onto [app.netlify.com/drop](https://app.netlify.com/drop) to get a link instantly.
+
 ## Install
 
 Copy `dist/grid-clash.apk` and/or `dist/grid-clash-online.apk` to your phone and open them. Android will ask you to
@@ -153,6 +169,7 @@ npm ci
 npm run clash:build   # → gridclash/dist/index.html
 npm run clash:test    # bot-vs-bot sims for every gun and difficulty + touch-driven browser test (solo and 2-player)
 npm run clash:online  # real online matches (1v1 + 2v2) between browser 'phones' through the public relay (needs internet)
+npm run clash:web     # builds /docs and tests it as an iPhone (offline cache, touch, iPhone-hosts/Android-joins online)
 npm run clash:apk     # → gridclash/dist/grid-clash.apk + grid-clash-online.apk (needs Android SDK build-tools 34 + platform 34 in $ANDROID_HOME)
 ```
 
