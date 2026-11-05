@@ -31,6 +31,14 @@ export const MAX_MATS = 300;
 export const MATS_REGEN = 7;
 export const ROUND_TIME = 90;
 export const WINS_NEEDED = 3;
+// blue, red, green, yellow — free-for-all modes give every player a team
+export const TEAM_HEX = ["#3fa7ff", "#ff4d5e", "#43d97b", "#ffc93c"];
+const TEAM_LIGHT = ["#7cc4ff", "#ff8a94", "#8be8ad", "#ffdf85"];
+// free-for-all spawns, as far apart as the map allows
+const FFA_SPAWNS = {
+  3: [{ x: 15, y: 2.5 }, { x: 2.5, y: 17 }, { x: 27.5, y: 17 }],
+  4: [{ x: 2.5, y: 3.5 }, { x: 27.5, y: 16.5 }, { x: 27.5, y: 3.5 }, { x: 2.5, y: 16.5 }],
+};
 export const MAX_ROUNDS = 9;
 const MOVE_SPEED = 4.3;
 const MEDKIT_HEAL = 35;
@@ -75,7 +83,8 @@ export function createGame({ loadouts, names, controllers, seed, teams }) {
     state: "countdown",
     stateT: 3,
     round: 1,
-    score: [0, 0],
+    numTeams: Math.max(2, Math.max(...tm) + 1),
+    score: [],
     roundWinner: -1,
     matchWinner: -1,
     timeLeft: ROUND_TIME,
@@ -83,6 +92,7 @@ export function createGame({ loadouts, names, controllers, seed, teams }) {
     shake: 0,
     rng: mulberry(seed ?? (Date.now() & 0xffffffff)),
   };
+  g.score = Array.from({ length: g.numTeams }, () => 0);
   resetRound(g);
   return g;
 }
@@ -109,10 +119,16 @@ function resetRound(g) {
     m.t = MEDKIT_EVERY * 0.5;
   }
   g.players.forEach((p) => {
-    const mates = g.players.filter((q) => q.team === p.team);
-    const k = mates.indexOf(p);
-    p.x = SPAWNS[p.team].x;
-    p.y = mates.length === 1 ? SPAWNS[p.team].y : 6.5 + (7 * k) / (mates.length - 1);
+    if (g.numTeams > 2) {
+      const sp = FFA_SPAWNS[g.numTeams][p.team];
+      p.x = sp.x;
+      p.y = sp.y;
+    } else {
+      const mates = g.players.filter((q) => q.team === p.team);
+      const k = mates.indexOf(p);
+      p.x = SPAWNS[p.team].x;
+      p.y = mates.length === 1 ? SPAWNS[p.team].y : 6.5 + (7 * k) / (mates.length - 1);
+    }
     p.vx = p.vy = 0;
     p.hp = MAX_HP;
     p.alive = true;
@@ -121,7 +137,7 @@ function resetRound(g) {
     p.burst = null;
     p.mats = START_MATS;
     p.mode = "combat";
-    p.facing = p.team === 0 ? 0 : Math.PI;
+    p.facing = g.numTeams > 2 ? Math.atan2(10 - p.y, 15 - p.x) : p.team === 0 ? 0 : Math.PI;
     p.aiming = false;
     p.roundDmg = 0;
   });
@@ -178,16 +194,14 @@ export function step(g, dt) {
       // time out: more health wins; equal health goes to whoever dealt more
       // damage this round; only a true tie is a draw
       const key = (t) => g.players.reduce((n, p) => n + (p.team === t ? p.hp * 1000 + p.roundDmg : 0), 0);
-      const a = key(0);
-      const b = key(1);
-      endRound(g, a === b ? -1 : a > b ? 0 : 1);
+      endRound(g, uniqueBest(g.score.map((_, t) => key(t))));
     }
   } else if (g.state === "roundEnd") {
     g.stateT -= dt;
     if (g.stateT <= 0) {
-      if (g.score[0] >= WINS_NEEDED || g.score[1] >= WINS_NEEDED || g.round >= MAX_ROUNDS) {
+      if (g.score.some((s) => s >= WINS_NEEDED) || g.round >= MAX_ROUNDS) {
         g.state = "matchEnd";
-        g.matchWinner = g.score[0] === g.score[1] ? -1 : g.score[0] > g.score[1] ? 0 : 1;
+        g.matchWinner = uniqueBest(g.score);
         emit(g, { t: "matchEnd", winner: g.matchWinner });
       } else {
         g.round++;
@@ -201,6 +215,13 @@ export function step(g, dt) {
 
   updateBullets(g, dt);
   updateFx(g, dt);
+}
+
+// index of the single highest value, or -1 if it's shared
+function uniqueBest(vals) {
+  const max = Math.max(...vals);
+  const at = vals.reduce((a, v, i) => (v === max ? [...a, i] : a), []);
+  return at.length === 1 ? at[0] : -1;
 }
 
 function endRound(g, winner) {
@@ -540,7 +561,7 @@ function updateBullets(g, dt) {
 function hitTile(g, cx, cy, amount, byPid) {
   const t = tileAt(g.world, cx, cy);
   if (!t) return;
-  const color = t.wall.team === 0 ? "#7cc4ff" : "#ff8a94";
+  const color = TEAM_LIGHT[t.wall.team] || "#ffffff";
   if (damageTile(g.world, cx, cy, amount)) {
     for (let k = 0; k < 10; k++) {
       g.particles.push({
@@ -613,13 +634,14 @@ function damagePlayer(g, p, amount, by) {
       g.particles.push({
         x: p.x, y: p.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
         life: 0.6 + g.rng() * 0.6, t: 0, size: 0.12 + g.rng() * 0.16,
-        color: p.team === 0 ? "#3fa7ff" : "#ff4d5e",
+        color: TEAM_HEX[p.team],
       });
     }
     g.shake = Math.max(g.shake, 0.8);
     emit(g, { t: "death", pid: p.id, team: p.team, x: p.x, y: p.y });
-    // the round ends when a whole team is down
-    if (!g.players.some((q) => q.alive && q.team === p.team)) endRound(g, 1 - p.team);
+    // the round ends when only one team is left standing
+    const standing = new Set(g.players.filter((q) => q.alive).map((q) => q.team));
+    if (standing.size <= 1) endRound(g, standing.size ? [...standing][0] : -1);
   }
 }
 
@@ -828,5 +850,5 @@ export function particlesForEvent(g, e) {
   };
   if (e.t === "boom") burst(e.x, e.y, 18, ["#ffd27a", "#ff6b4a"], 6, 0.6);
   else if (e.t === "tileBreak") burst(e.x, e.y, 10, [e.color], 4, 0.7);
-  else if (e.t === "death") burst(e.x, e.y, 26, [e.team === 0 ? "#3fa7ff" : "#ff4d5e"], 5, 0.9);
+  else if (e.t === "death") burst(e.x, e.y, 26, [TEAM_HEX[e.team]], 5, 0.9);
 }

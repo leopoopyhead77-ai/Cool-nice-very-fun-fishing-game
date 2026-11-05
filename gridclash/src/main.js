@@ -6,7 +6,14 @@ import { createInput } from "./input.js";
 import { createRenderer } from "./render.js";
 import { unlockAudio, playEvents, uiClick, audio } from "./audio.js";
 import { load, save } from "./storage.js";
-import { createHost, joinRoom, normalizeCode, encodeWalls } from "./net.js";
+import { createHost, joinRoom, normalizeCode, encodeWalls, MODES, PIN_LENGTH } from "./net.js";
+
+// One codebase, two apps (chosen at build time by build/build.mjs):
+//   "local"  – Grid Clash: 2 players on one phone, and vs bot
+//   "online" – Grid Clash Online: 1v1, 2v2, 1v1v1, 1v1v1v1 over the internet
+// eslint-disable-next-line no-undef
+const APP = typeof __APP__ !== "undefined" ? __APP__ : "local";
+const IS_ONLINE_APP = APP === "online";
 import { createRemoteController, createHostSync, createGuestView } from "./online.js";
 
 const ME = 0;
@@ -28,7 +35,7 @@ const settings = {
   netName: load("netName", ""),
   netMode: load("netMode", "1v1"),
 };
-if (!["1v1", "2v2"].includes(settings.netMode)) settings.netMode = "1v1";
+if (!MODES[settings.netMode]) settings.netMode = "1v1";
 const validLoadout = (l) => Array.isArray(l) && l.length === 2 && l.every((id) => GUN_BY_ID[id]);
 if (!validLoadout(settings.loadout)) settings.loadout = ["ar", "shotgun"];
 if (!validLoadout(settings.loadout2)) settings.loadout2 = ["burst", "smg"];
@@ -42,15 +49,16 @@ app.innerHTML = `
   <canvas id="cv"></canvas>
   <section id="menu" class="screen">
     <div class="menu-card">
-      <h1 class="logo">GRID<span>CLASH</span></h1>
-      <p class="tag">Shoot &amp; build arena · 1v1 · 2v2 · 30×20</p>
-      <div class="menu-grid">
-        <button class="btn red big" id="pvp">👥 2 PLAYERS <small>1v1 · same phone</small></button>
-        <button class="btn primary big" id="play">▶ PLAY vs BOT</button>
-        <button class="btn big online-btn" id="online">🌐 ONLINE <small>1v1 · 2v2 · any network</small></button>
+      <h1 class="logo">GRID<span>CLASH</span>${IS_ONLINE_APP ? '<em class="logo-online">ONLINE</em>' : ""}</h1>
+      <p class="tag">${IS_ONLINE_APP ? "Online shoot &amp; build arena · 1v1 · 2v2 · 1v1v1 · 1v1v1v1" : "Shoot &amp; build arena · 30×20"}</p>
+      <div class="menu-grid${IS_ONLINE_APP ? " one" : ""}">
+        ${IS_ONLINE_APP
+          ? '<button class="btn primary big" id="online">🌐 PLAY ONLINE <small>host a room or join with a PIN · mobile data works</small></button>'
+          : `<button class="btn red big" id="pvp">👥 2 PLAYERS <small>1v1 · same phone</small></button>
+        <button class="btn primary big" id="play">▶ PLAY vs BOT</button>`}
       </div>
       <div class="row">
-        <span class="lbl">Bot</span>
+        <span class="lbl">${IS_ONLINE_APP ? "Bots" : "Bot"}</span>
         <div class="seg" id="diff">
           ${DIFFS.map((d) => `<button data-d="${d}">${d}</button>`).join("")}
         </div>
@@ -85,19 +93,20 @@ app.innerHTML = `
   <section id="online-screen" class="screen hidden">
     <div class="menu-card">
       <h2>Online</h2>
-      <p class="tag">Play friends anywhere, on Wi-Fi or mobile data. One phone creates a room; the others join with its code.</p>
+      <p class="tag">Play friends anywhere, on Wi-Fi or mobile data. One player hosts a room; everyone else joins with its PIN.</p>
       <div class="row">
         <span class="lbl">Name</span>
         <input id="netName" class="inp" maxlength="12" placeholder="Your name" autocomplete="off" />
       </div>
       <div class="row">
         <span class="lbl">Mode</span>
-        <div class="seg" id="netMode"><button data-m="1v1">1v1</button><button data-m="2v2">2v2</button></div>
+        <div class="seg" id="netMode">${Object.keys(MODES).map((m) => `<button data-m="${m}">${m}</button>`).join("")}</div>
       </div>
-      <button class="btn primary big" id="netCreate">Create room</button>
+      <p class="tag mode-note" id="netModeNote"></p>
+      <button class="btn primary big" id="netCreate">Host a room</button>
       <div class="row join-row">
-        <input id="netCode" class="inp code" maxlength="5" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false" />
-        <button class="btn red" id="netJoin">Join room</button>
+        <input id="netCode" class="inp code" maxlength="${PIN_LENGTH}" placeholder="PIN" inputmode="numeric" pattern="[0-9]*" autocomplete="off" spellcheck="false" />
+        <button class="btn red" id="netJoin">Join with PIN</button>
       </div>
       <p id="netStatus" class="status"></p>
       <div class="row foot"><button class="btn ghost small" id="netBack">‹ Back</button><span class="tag small-note">Empty seats are filled by bots.</span></div>
@@ -107,7 +116,7 @@ app.innerHTML = `
   <section id="lobby" class="screen hidden">
     <div class="menu-card">
       <div class="lobby-head">
-        <div><small class="lbl">Room code</small><div id="lbCode" class="bigcode"></div></div>
+        <div><small class="lbl">Room PIN</small><div id="lbCode" class="bigcode"></div></div>
         <div id="lbMode" class="pill"></div>
       </div>
       <p class="tag" id="lbHint"></p>
@@ -129,8 +138,9 @@ app.innerHTML = `
         <li><b>EDIT</b> — aim at one of your walls and release to cut one tile out (a window/door). Release on the open tile again, or press <b>RESET</b>, to restore it. One edited tile per wall at a time.</li>
         <li><b>Weapon slots</b> — tap to switch, tap the active one to reload.</li>
         <li>Medkits spawn at the top and bottom middle. First to 3 rounds wins.</li>
-        <li><b>Online</b> — Create a room, read the 5-letter code to your friends, they tap Join and type it. Works on mobile data. 1v1 or 2v2; empty seats get bots. The room creator's phone hosts the match, so keep it in the app.</li>
-        <li><b>2 Players</b> — the phone turns upright. Blue plays from the bottom end, Red from the top end; each side's controls face its player. Left thumb moves, right thumb aims, BUILD sits above your aim stick. Pick Red's guns with the P2 tab on the loadout screen.</li>
+        ${IS_ONLINE_APP
+          ? `<li><b>Online</b> — one player taps <b>Host a room</b> and reads out the 6-digit PIN; everyone else types it and taps <b>Join with PIN</b>. Works on mobile data. Modes: 1v1, 2v2, and free-for-all 1v1v1 / 1v1v1v1. Empty seats get bots. The host's phone runs the match, so the host should stay in the app.</li>`
+          : `<li><b>2 Players</b> — the phone turns upright. Blue plays from the bottom end, Red from the top end; each side's controls face its player. Left thumb moves, right thumb aims, BUILD sits above your aim stick. Pick Red's guns with the P2 tab on the loadout screen.</li>`}
       </ul>
       <p class="kbd">Keyboard: WASD move · mouse aim/release · B build · E edit · R reset/reload · 1/2 weapons</p>
       <button class="btn primary" id="helpBack">Got it</button>
@@ -186,18 +196,20 @@ $("diff").addEventListener("click", (e) => {
   click();
   refreshMenu();
 });
-$("play").addEventListener("click", () => {
+$("play")?.addEventListener("click", () => {
   click();
   startMatch("bot");
 });
-$("pvp").addEventListener("click", () => {
+$("pvp")?.addEventListener("click", () => {
   click();
   startMatch("pvp");
 });
-$("online").addEventListener("click", () => {
+$("online")?.addEventListener("click", () => {
   click();
   openOnline("");
 });
+// the online app has no same-phone player 2, so no P2 loadout tab
+if (IS_ONLINE_APP) $("loPlayer").classList.add("hidden");
 $("openLoadout").addEventListener("click", () => {
   click();
   renderLoadout();
@@ -530,9 +542,17 @@ function setNetStatus(text, bad) {
   $("netStatus").classList.toggle("bad", !!bad);
 }
 
+const MODE_NOTES = {
+  "1v1": "1 vs 1 · two players",
+  "2v2": "Teams of two · blue vs red · up to 4 players",
+  "1v1v1": "Free-for-all · 3 players, everyone for themselves",
+  "1v1v1v1": "Free-for-all · 4 players, everyone for themselves",
+};
+
 function refreshOnline(fillName) {
   if (fillName) $("netName").value = settings.netName;
   $("netMode").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.m === settings.netMode));
+  $("netModeNote").textContent = MODE_NOTES[settings.netMode];
 }
 
 function openOnline(message) {
@@ -604,8 +624,8 @@ $("netCreate").addEventListener("click", async () => {
 $("netJoin").addEventListener("click", async () => {
   click();
   const code = normalizeCode($("netCode").value);
-  if (code.length !== 5) {
-    setNetStatus("Enter the 5-character room code", true);
+  if (code.length !== PIN_LENGTH) {
+    setNetStatus(`Enter the ${PIN_LENGTH}-digit room PIN`, true);
     return;
   }
   const name = playerName();
@@ -644,18 +664,20 @@ function renderLobby() {
   const isHost = !!host;
   const code = isHost ? host.code : guest?.code;
   const size = isHost ? host.size : lobbyInfo?.size || 2;
+  const mode = isHost ? host.mode : lobbyInfo?.mode || "1v1";
+  const teams = isHost ? host.teams : lobbyInfo?.teams || MODES[mode]?.teams || [0, 1, 0, 1];
   const slots = isHost
     ? host.slots.map((s) => (s ? { name: s.name, cid: s.cid, link: s.link, ping: s.ping } : null))
     : lobbyInfo?.slots || [];
   $("lbCode").textContent = code || "";
-  $("lbMode").textContent = size === 4 ? "2v2" : "1v1";
+  $("lbMode").textContent = mode;
   $("lbHint").textContent = isHost
-    ? "Tell your friends this code. They tap ONLINE → Join room. Start whenever you're ready; empty seats get bots."
+    ? "You're hosting. Tell your friends this PIN — they tap PLAY ONLINE → Join with PIN. Start whenever you're ready; empty seats get bots."
     : "You're in! Waiting for the host to start the match…";
   const mine = isHost ? "host" : guest?.cid;
   $("lbSlots").innerHTML = Array.from({ length: size }, (_, i) => {
     const s = slots[i];
-    const team = i % 2;
+    const team = teams[i] ?? i % 2;
     const link = s && s.cid !== "host" ? (s.link === "direct" ? "direct" : "relay") + (s.ping ? ` · ${s.ping} ms` : "") : s ? "host" : "";
     return `<div class="slot t${team}${s && s.cid === mine ? " me" : ""}">
       <span class="dot"></span>
@@ -692,7 +714,7 @@ function startOnlineMatch() {
   const slots = host.slots;
   const loadouts = slots.map((s, i) => (i === 0 ? settings.loadout.slice() : s && valid(s.loadout) ? s.loadout : botLoadout()));
   const nm = slots.map((s, i) => (s ? s.name : `BOT ${i + 1}`));
-  const teams = slots.map((_, i) => i % 2);
+  const teams = host.teams.slice();
   hostRemotes = slots.map((s, i) => (i > 0 && s && !s.left ? createRemoteController() : null));
   const controllers = slots.map((s, i) => (i === 0 ? input.controllers[0] : hostRemotes[i] || createBot(settings.difficulty)));
   const mid = Math.random().toString(36).slice(2, 10);

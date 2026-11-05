@@ -173,3 +173,17 @@ body.pvp #rotate { display: none !important; }
 .stats th.t1, .stats td.t1 { color: var(--red); }
 .online-only { display: none; margin: 0; font-size: 12px; }
 body.is-online .online-only { display: block; }
+
+/* ---- 4 teams, online app ---- */
+.slot.t2 .dot { background: #43d97b; }
+.slot.t3 .dot { background: #ffc93c; }
+.stats th.t2, .stats td.t2 { color: #43d97b; }
+.stats th.t3, .stats td.t3 { color: #ffc93c; }
+.menu-grid.one { grid-template-columns: 1fr; }
+.logo-online {
+  font-style: normal; font-size: 0.32em; letter-spacing: 0.2em; color: var(--green);
+  vertical-align: middle; margin-left: 0.5em; text-shadow: none;
+}
+.mode-note { margin: -4px 0 0; font-size: 12px; }
+#netMode button { font-size: 12px; padding: 8px 4px; }
+.inp.code { letter-spacing: 0.3em; }

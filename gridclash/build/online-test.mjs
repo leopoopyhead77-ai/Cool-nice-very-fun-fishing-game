@@ -12,7 +12,8 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const shots = resolve(root, "build/shots");
 mkdirSync(shots, { recursive: true });
-const url = "file://" + resolve(root, "dist/index.html");
+// the Grid Clash Online app
+const url = "file://" + resolve(root, "dist/online/index.html");
 
 const launch = { executablePath: process.env.CHROME_PATH || "/opt/pw-browsers/chromium" };
 if (process.env.HTTPS_PROXY) launch.proxy = { server: process.env.HTTPS_PROXY };
@@ -70,10 +71,10 @@ const gst = await phone("guest");
 await openOnline(host, "Hoster");
 await host.click('#netMode button[data-m="1v1"]');
 await host.click("#netCreate");
-const created = await waitFor(host, () => document.getElementById("lbCode").textContent.length === 5);
+const created = await waitFor(host, () => /^\d{6}$/.test(document.getElementById("lbCode").textContent));
 check(created, "host creates a room on the public relay");
 const code = await host.textContent("#lbCode");
-console.log("     room code:", code);
+console.log("     room PIN:", code);
 await host.screenshot({ path: resolve(shots, "11-online-lobby-host.png") });
 
 await openOnline(gst, "Guesty");
@@ -187,7 +188,7 @@ const gb = await phone("guestB");
 await openOnline(h2, "Captain");
 await h2.click('#netMode button[data-m="2v2"]');
 await h2.click("#netCreate");
-check(await waitFor(h2, () => document.getElementById("lbCode").textContent.length === 5), "2v2 room created");
+check(await waitFor(h2, () => /^\d{6}$/.test(document.getElementById("lbCode").textContent)), "2v2 room created");
 const code2 = await h2.textContent("#lbCode");
 for (const [p, n] of [[ga, "Alpha"], [gb, "Bravo"]]) {
   await openOnline(p, n);
@@ -218,6 +219,48 @@ check(botActive, "2v2 match is running on the host");
 await ga.screenshot({ path: resolve(shots, "17-online-2v2-guest.png") });
 const gaSees = await G(ga, "g.players.every((p) => Number.isFinite(p.x))");
 check(gaSees, "guests receive all four players' positions");
+for (const p of [h2, ga, gb]) await p.context().close();
+
+// ---------------------------------------------------------------- free-for-all
+async function ffa(mode, guestNames) {
+  const n = mode === "1v1v1" ? 3 : 4;
+  const hp = await phone("ffa-host");
+  await openOnline(hp, "Boss");
+  await hp.click(`#netMode button[data-m="${mode}"]`);
+  await hp.click("#netCreate");
+  check(await waitFor(hp, () => /^\d{6}$/.test(document.getElementById("lbCode").textContent)), `${mode} room created with a 6-digit PIN`);
+  const pin = await hp.textContent("#lbCode");
+  const gs = [];
+  for (const nm of guestNames) {
+    const p = await phone("ffa-" + nm);
+    await openOnline(p, nm);
+    await p.fill("#netCode", pin);
+    await p.click("#netJoin");
+    gs.push(p);
+  }
+  const all = await waitFor(hp, (names) => {
+    const shown = [...document.querySelectorAll("#lbSlots .sname")].map((e) => e.textContent);
+    return names.every((x) => shown.some((t) => t.includes(x)));
+  }, guestNames);
+  check(all, `${mode}: ${guestNames.length} guest(s) join with the PIN`);
+  check((await hp.locator("#lbSlots .slot").count()) === n, `${mode} lobby has ${n} seats`);
+  await hp.screenshot({ path: resolve(shots, `18-online-${mode}-lobby.png`) });
+  await hp.click("#lbStart");
+  let ok = true;
+  for (const p of gs) ok = ok && (await waitFor(p, (k) => window.__clash.mode === "guest" && window.__clash.game?.players.length === k, n));
+  check(ok, `${mode}: every guest enters a ${n}-player match`);
+  const teams = await G(hp, "g.players.map((p) => p.team)");
+  check(new Set(teams).size === n && (await G(hp, "g.numTeams")) === n, `${mode}: everyone is on their own team (${teams.join(",")})`);
+  check((await G(hp, "g.players.filter((p) => p.name.startsWith('BOT')).length")) === n - 1 - guestNames.length, `${mode}: empty seats are bots`);
+  await waitFor(hp, () => window.__clash.game.state === "fight", null, 8000);
+  await hp.waitForTimeout(4000);
+  const gsees = await G(gs[0], "g.numTeams === " + n + " && g.score.length === " + n);
+  check(gsees, `${mode}: guests see ${n} teams and ${n} scores`);
+  await gs[0].screenshot({ path: resolve(shots, `19-online-${mode}-guest.png`) });
+  for (const p of [hp, ...gs]) await p.context().close();
+}
+await ffa("1v1v1v1", ["Echo", "Fox"]);
+await ffa("1v1v1", ["Golf"]);
 
 check(errors.length === 0, `no page errors${errors.length ? ": " + errors.slice(0, 4).join(" | ") : ""}`);
 await browser.close();

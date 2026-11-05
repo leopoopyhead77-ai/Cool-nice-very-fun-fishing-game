@@ -28,6 +28,18 @@ const svg = (s) => `<svg xmlns="http://www.w3.org/2000/svg" width="${s}" height=
   </g>
 </svg>`;
 
+// Grid Clash Online: the same art plus a green globe badge
+const badge = `<g transform="translate(140 140)">
+    <circle r="40" fill="#0b0f18"/>
+    <circle r="32" fill="#43d97b"/>
+    <g fill="none" stroke="#0b1220" stroke-width="5">
+      <circle r="22"/>
+      <ellipse rx="10" ry="22"/>
+      <path d="M-22 0H22M-19 -11H19M-19 11H19"/>
+    </g>
+  </g>`;
+const svgOnline = (s) => svg(s).replace("</g>\n</svg>", `</g>\n  ${badge}\n</svg>`);
+
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || "/opt/pw-browsers/chromium" });
 for (const [dir, size] of Object.entries(SIZES)) {
   const out = resolve(root, "android/res", dir);
@@ -37,5 +49,14 @@ for (const [dir, size] of Object.entries(SIZES)) {
   await page.screenshot({ path: resolve(out, "ic_launcher.png"), omitBackground: true });
   await page.close();
   console.log(`${dir}/ic_launcher.png  ${size}x${size}`);
+}
+for (const [dir, size] of Object.entries(SIZES)) {
+  const out = resolve(root, "android/res-online", dir);
+  mkdirSync(out, { recursive: true });
+  const page = await browser.newPage({ viewport: { width: size, height: size } });
+  await page.setContent(`<body style="margin:0;background:transparent">${svgOnline(size)}</body>`);
+  await page.screenshot({ path: resolve(out, "ic_launcher.png"), omitBackground: true });
+  await page.close();
+  console.log(`online ${dir}/ic_launcher.png  ${size}x${size}`);
 }
 await browser.close();

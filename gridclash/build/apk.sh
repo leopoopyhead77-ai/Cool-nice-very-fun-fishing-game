@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # Builds a signed, installable APK from the web bundle in dist/.
 #
+#   bash build/apk.sh          → dist/grid-clash.apk         (com.gridclash.game)
+#   bash build/apk.sh online   → dist/grid-clash-online.apk  (com.gridclash.online)
+#
+# Both apps share the Java code, manifest and resources; the online one gets
+# its own package name (so both install side by side), label and icon.
+#
 # Deliberately Gradle-free: the app is one Activity and a WebView, so the SDK's
 # own tools (aapt2 → javac → d8 → apksigner) do the whole job with no plugin
 # resolution and no network.
@@ -11,29 +17,44 @@ SDK="${ANDROID_HOME:-/opt/android-sdk}"
 API=34
 BT="$SDK/build-tools/34.0.0"
 JAR="$SDK/platforms/android-$API/android.jar"
-OUT="$ROOT/build/apk-work"
+APP="${1:-local}"
 DIST="$ROOT/dist"
-APK="$DIST/grid-clash.apk"
+OUT="$ROOT/build/apk-work/$APP"
+if [ "$APP" = "online" ]; then
+  PKG=com.gridclash.online
+  HTML="$DIST/online/index.html"
+  APK="$DIST/grid-clash-online.apk"
+else
+  PKG=com.gridclash.game
+  HTML="$DIST/index.html"
+  APK="$DIST/grid-clash.apk"
+fi
 
 for tool in "$BT/aapt2" "$BT/d8" "$BT/zipalign" "$BT/apksigner" "$JAR"; do
   [ -e "$tool" ] || { echo "missing: $tool" >&2; exit 1; }
 done
-[ -f "$DIST/index.html" ] || { echo "run 'node build/build.mjs' first" >&2; exit 1; }
+[ -f "$HTML" ] || { echo "run 'node build/build.mjs' first" >&2; exit 1; }
 
 rm -rf "$OUT"
-mkdir -p "$OUT/compiled" "$OUT/classes" "$OUT/gen" "$ROOT/android/assets"
+mkdir -p "$OUT/compiled" "$OUT/classes" "$OUT/gen" "$OUT/assets"
 
-echo "-> staging web bundle"
-cp "$DIST/index.html" "$ROOT/android/assets/index.html"
+echo "-> staging web bundle ($APP)"
+cp "$HTML" "$OUT/assets/index.html"
+cp -r "$ROOT/android/res" "$OUT/res"
+if [ "$APP" = "online" ]; then
+  # its own name and icon
+  cp -r "$ROOT/android/res-online/." "$OUT/res/"
+fi
 
 echo "-> aapt2 compile"
-"$BT/aapt2" compile --dir "$ROOT/android/res" -o "$OUT/compiled/res.zip"
+"$BT/aapt2" compile --dir "$OUT/res" -o "$OUT/compiled/res.zip"
 
 echo "-> aapt2 link"
 "$BT/aapt2" link \
   -I "$JAR" \
   --manifest "$ROOT/android/AndroidManifest.xml" \
-  -A "$ROOT/android/assets" \
+  --rename-manifest-package "$PKG" \
+  -A "$OUT/assets" \
   --java "$OUT/gen" \
   --min-sdk-version 24 \
   --target-sdk-version "$API" \

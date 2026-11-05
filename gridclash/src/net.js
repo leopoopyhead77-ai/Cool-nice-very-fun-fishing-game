@@ -10,8 +10,11 @@
 // opens, gameplay traffic switches to it for lower latency; if the carrier's
 // NAT blocks it, everything keeps flowing through the broker.
 //
-// Room code: 5 characters. The first one also says which broker the room is
-// on, so a guest connects to the same one as the host.
+// Room PIN: 6 digits, typed on the number pad. The first digit also says
+// which broker the room is on, so a guest connects to the same one as the host.
+//
+// Modes: 1v1, 2v2 (teams), and the free-for-alls 1v1v1 and 1v1v1v1 where
+// every player is their own team.
 
 import { mqttConnect } from "./mqtt.js";
 import { GUNS } from "./guns.js";
@@ -23,19 +26,28 @@ export const BROKERS = [
   { url: "wss://broker.hivemq.com:8884/mqtt" },
 ];
 const ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const ROOT = "gridclash/v2/";
+const ROOT = "gridclash/v3/";
+
+export const MODES = {
+  "1v1": { size: 2, teams: [0, 1] },
+  "2v2": { size: 4, teams: [0, 1, 0, 1] },
+  "1v1v1": { size: 3, teams: [0, 1, 2] },
+  "1v1v1v1": { size: 4, teams: [0, 1, 2, 3] },
+};
 const ICE = [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302", "stun:stun.cloudflare.com:3478"] }];
 const TIMEOUT_MS = 8000;
 
 const rid = (n) => Array.from({ length: n }, () => ALPHA[Math.floor(Math.random() * ALPHA.length)]).join("");
 
+export const PIN_LENGTH = 6;
+
 export function normalizeCode(s) {
-  return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/O/g, "0").replace(/I/g, "1").slice(0, 5);
+  return String(s || "").replace(/[^0-9]/g, "").slice(0, PIN_LENGTH);
 }
 
 export function brokerForCode(code) {
-  const i = ALPHA.indexOf(code[0]);
-  return i < 0 ? 0 : i % BROKERS.length;
+  const d = Number(code[0]);
+  return Number.isFinite(d) ? d % BROKERS.length : 0;
 }
 
 async function connectBroker(index, clientId) {
@@ -45,7 +57,7 @@ async function connectBroker(index, clientId) {
 
 // ---- snapshots ------------------------------------------------------------------
 
-const MODES = ["combat", "build", "edit"];
+const PMODES = ["combat", "build", "edit"];
 const KINDS = ["lob", "bullet", "rocket"];
 const GUN_INDEX = Object.fromEntries(GUNS.map((g, i) => [g.id, i]));
 const r2 = (v) => Math.round(v * 100) / 100;
@@ -68,7 +80,7 @@ export function encodeSnapshot(g, n, extra) {
     tl: r2(g.timeLeft), rw: g.roundWinner, mw: g.matchWinner, sh: r2(g.shake),
     p: g.players.map((p) => [
       r2(p.x), r2(p.y), r2(p.vx), r2(p.vy), p.hp, p.alive ? 1 : 0, r2(p.facing),
-      p.aiming ? 1 : 0, r2(p.aimAngle), r2(p.aimMag), MODES.indexOf(p.mode), p.slot,
+      p.aiming ? 1 : 0, r2(p.aimAngle), r2(p.aimMag), PMODES.indexOf(p.mode), p.slot,
       p.guns[0].ammo, p.guns[1].ammo, r2(p.reloadT), r2(p.cd), r2(p.swapT),
       Math.floor(p.mats), r2(p.hitFlash), r2(p.recoil), p.burst ? 1 : 0,
       [p.stats.dmg, p.stats.shots, p.stats.hits, p.stats.walls, p.stats.edits],
@@ -105,7 +117,7 @@ export function applySnapshot(g, s) {
     p.aiming = !!a[7];
     p.aimAngle = a[8];
     p.aimMag = a[9];
-    p.mode = MODES[a[10]] || "combat";
+    p.mode = PMODES[a[10]] || "combat";
     p.slot = a[11];
     p.guns[0].ammo = a[12];
     p.guns[1].ammo = a[13];
@@ -173,9 +185,10 @@ function attachChannel(dc, onMsg, onState) {
 
 // ---- host -------------------------------------------------------------------------
 
-// opts: { mode: "1v1"|"2v2", name, loadout, onLobby(slots), onGuestMessage, onStatus }
+// opts: { mode: "1v1"|"2v2"|"1v1v1"|"1v1v1v1", name, loadout, onLobby(slots), onGuestMessage, onStatus }
 export async function createHost(opts) {
-  const size = opts.mode === "2v2" ? 4 : 2;
+  const mode = MODES[opts.mode] ? opts.mode : "1v1";
+  const { size, teams } = MODES[mode];
   const cid = "h" + rid(8);
   let client = null;
   let brokerIndex = 0;
@@ -191,11 +204,11 @@ export async function createHost(opts) {
   }
   if (!client) throw new Error("Couldn't reach any relay (" + (lastErr && lastErr.message) + ")");
 
-  // first character picks the broker
+  // first digit picks the broker
   let first;
-  do first = ALPHA[Math.floor(Math.random() * ALPHA.length)];
-  while (ALPHA.indexOf(first) % BROKERS.length !== brokerIndex);
-  const code = first + rid(4);
+  do first = Math.floor(Math.random() * 10);
+  while (first % BROKERS.length !== brokerIndex);
+  const code = String(first) + Array.from({ length: PIN_LENGTH - 1 }, () => Math.floor(Math.random() * 10)).join("");
   const base = ROOT + code;
 
   const slots = Array.from({ length: size }, () => null);
@@ -205,7 +218,7 @@ export async function createHost(opts) {
   let closed = false;
 
   const host = {
-    code, size, slots, guests,
+    code, size, slots, guests, mode, teams,
     get started() { return started; },
     set started(v) { started = v; },
     broadcast(msg) {
@@ -231,7 +244,7 @@ export async function createHost(opts) {
     },
     lobby() {
       host.broadcast({
-        t: "lobby", size, mode: opts.mode, started,
+        t: "lobby", size, mode, teams, started,
         slots: slots.map((s) => (s ? { name: s.name, cid: s.cid, link: s.link, ping: s.ping || 0 } : null)),
       });
       opts.onLobby?.(slots);
@@ -300,8 +313,9 @@ export async function createHost(opts) {
           host.sendTo(m.cid, { t: "full", why: "Match already started" });
           return;
         }
-        // fill alternately so 2 humans in 2v2 end up on opposite teams
-        const order = size === 4 ? [1, 2, 3] : [1];
+        // seat order: in 2v2 the first joiner is on red, so two humans
+        // aren't stuck together against bots
+        const order = [1, 2, 3].slice(0, size - 1);
         const slot = order.find((i) => !slots[i]);
         if (slot === undefined) {
           host.sendTo(m.cid, { t: "full", why: "Room is full" });
@@ -365,7 +379,7 @@ export async function createHost(opts) {
 // opts: { code, name, loadout, onLobby, onStart, onSnapshot, onClosed(reason), onStatus }
 export async function joinRoom(opts) {
   const code = normalizeCode(opts.code);
-  if (code.length !== 5) throw new Error("Room codes are 5 characters");
+  if (code.length !== PIN_LENGTH) throw new Error(`Room PINs are ${PIN_LENGTH} digits`);
   const cid = "g" + rid(8);
   opts.onStatus?.("Connecting to relay…");
   const client = await connectBroker(brokerForCode(code), cid);
@@ -492,7 +506,7 @@ export async function joinRoom(opts) {
     if (!joined) toHost({ t: "join", name: opts.name, loadout: opts.loadout });
     guest.send({ t: "ping", ts: performance.now(), rtt });
     if (Date.now() - lastHost > TIMEOUT_MS) {
-      opts.onClosed?.(joined ? "Lost connection to the host" : "No room with that code (or the host is offline)");
+      opts.onClosed?.(joined ? "Lost connection to the host" : "No room with that PIN (or the host is offline)");
       guest.leave();
     }
   }, 1000);

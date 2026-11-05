@@ -7,6 +7,8 @@ import { TIER_COLOR } from "./guns.js";
 export const TEAM = [
   { main: "#3fa7ff", dark: "#1d5f9e", light: "#a9d8ff", wall: "#2f6fb0", wallHi: "#5b9ee0" },
   { main: "#ff4d5e", dark: "#9e2532", light: "#ffb1b9", wall: "#a8343f", wallHi: "#e0606b" },
+  { main: "#43d97b", dark: "#1f7a43", light: "#b6f5cc", wall: "#2f8a52", wallHi: "#57c27e" },
+  { main: "#ffc93c", dark: "#a57a12", light: "#ffe9a8", wall: "#a8822a", wallHi: "#dcb24d" },
 ];
 
 const easeOutBack = (t) => {
@@ -52,7 +54,8 @@ export function createRenderer(canvas) {
   const sx = (x) => v.ox + x * v.TS;
   const sy = (y) => v.oy + y * v.TS;
 
-  function buildFloor(world) {
+  function buildFloor(world, numTeams = 2) {
+    v.floorTeams = numTeams;
     const c = document.createElement("canvas");
     const TS = v.TS * v.dpr;
     c.width = Math.ceil(GW * TS);
@@ -68,7 +71,8 @@ export function createRenderer(canvas) {
         }
       }
     }
-    // spawn zones
+    // spawn zones (team modes only; free-for-all spawns in the corners)
+    if (numTeams === 2) {
     const grad0 = f.createLinearGradient(0, 0, TS * 5, 0);
     grad0.addColorStop(0, "rgba(63,167,255,0.16)");
     grad0.addColorStop(1, "rgba(63,167,255,0)");
@@ -79,6 +83,7 @@ export function createRenderer(canvas) {
     grad1.addColorStop(1, "rgba(255,77,94,0)");
     f.fillStyle = grad1;
     f.fillRect(c.width - TS * 5, 0, TS * 5, c.height);
+    }
     // grid
     f.strokeStyle = "rgba(140,160,200,0.10)";
     f.lineWidth = Math.max(1, TS * 0.04);
@@ -699,8 +704,33 @@ export function createRenderer(canvas) {
 
     if (!L.pvp) {
       const me = meta.local ?? 0;
+      const ffa = (g.numTeams || 2) > 2;
       // top bar
       const ty = 20 * u;
+      if (ffa) {
+        // free-for-all: one score chip per player, in their colour
+        const n = g.numTeams;
+        const chip = 30 * u;
+        const tw = 74 * u + n * (chip + 4 * u);
+        ctx.fillStyle = "rgba(8,12,20,0.72)";
+        rr(ctx, cx - tw / 2, 4 * u, tw, 32 * u, 16 * u);
+        ctx.fill();
+        label(timerText(g), cx - tw / 2 + 36 * u, ty - 4 * u, 13 * u, g.timeLeft <= 10 ? "#ff7a7a" : "#fff");
+        label(`R${g.round} · FIRST TO 3`, cx - tw / 2 + 36 * u, ty + 9 * u, 6.5 * u, "rgba(255,255,255,0.6)", "center", 700);
+        for (let t = 0; t < n; t++) {
+          const x = cx - tw / 2 + 72 * u + t * (chip + 4 * u);
+          ctx.fillStyle = TEAM[t].main;
+          rr(ctx, x, 8 * u, chip, 24 * u, 10 * u);
+          ctx.fill();
+          if (g.players[me] && g.players[me].team === t) {
+            ctx.strokeStyle = "#fff";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          }
+          label(String(g.score[t] ?? 0), x + chip / 2, ty, 15 * u, "#0b1220", "center", 900);
+        }
+      }
+      if (!ffa) {
       ctx.fillStyle = "rgba(8,12,20,0.72)";
       rr(ctx, cx - 120 * u, 4 * u, 240 * u, 32 * u, 16 * u);
       ctx.fill();
@@ -714,27 +744,30 @@ export function createRenderer(canvas) {
       label(String(g.score[1]), cx + 93 * u, ty, 17 * u);
       label(timerText(g), cx, ty - 4 * u, 14 * u, g.timeLeft <= 10 ? "#ff7a7a" : "#fff");
       label(`ROUND ${g.round} · FIRST TO 3`, cx, ty + 9 * u, 7.5 * u, "rgba(255,255,255,0.6)", "center", 700);
-      // HP bars: blue team on the left, red team on the right
-      const hw = Math.min(170 * u, cx - 140 * u - 14 * u);
+      }
+      // HP bars: blue team / first half on the left, red team / second half on the right
+      const hw = Math.min(170 * u, cx - (ffa ? 110 : 140) * u - 14 * u);
       const ew = Math.min(hw, 104 * u);
-      for (const team of [0, 1]) {
-        const list = g.players.filter((q) => q.team === team);
-        const w = team === 0 ? hw : ew;
-        const x = team === 0 ? 12 * u : W - 54 * u - ew;
-        const align = team === 0 ? "left" : "right";
+      const sides = ffa
+        ? [g.players.filter((q, i) => i < Math.ceil(g.players.length / 2)), g.players.filter((q, i) => i >= Math.ceil(g.players.length / 2))]
+        : [g.players.filter((q) => q.team === 0), g.players.filter((q) => q.team === 1)];
+      sides.forEach((list, side) => {
+        const w = side === 0 ? hw : ew;
+        const x = side === 0 ? 12 * u : W - 54 * u - ew;
+        const align = side === 0 ? "left" : "right";
         if (list.length === 1) {
           const q = list[0];
           const nm = q.id === me && !meta.tags ? meta.names[q.id] : q.name || meta.names[q.id];
-          label(nm + (q.id === me && meta.tags ? " (you)" : ""), team === 0 ? 14 * u : W - 56 * u, 12 * u, 9 * u, TEAM[team].light, align, 800);
+          label(nm + (q.id === me && meta.tags ? " (you)" : ""), side === 0 ? 14 * u : W - 56 * u, 12 * u, 9 * u, TEAM[q.team].light, align, 800);
           hpBar(x, 18 * u, w, 16 * u, q, align);
         } else {
           list.forEach((q, k) => {
             const y = 3 * u + k * 18 * u;
             hpBar(x, y + 6 * u, w, 11 * u, q, align);
-            label(q.name + (q.id === me ? " ·you" : ""), team === 0 ? x + 2 * u : x + w - 2 * u, y + 2 * u, 6.5 * u, q.id === me ? "#fff" : TEAM[team].light, align, 800);
+            label(q.name + (q.id === me ? " ·you" : ""), side === 0 ? x + 2 * u : x + w - 2 * u, y + 2 * u, 6.5 * u, q.id === me ? "#fff" : TEAM[q.team].light, align, 800);
           });
         }
-      }
+      });
       if (meta.net) {
         const n = meta.net;
         const good = n.ping < 120;
@@ -1030,7 +1063,7 @@ export function createRenderer(canvas) {
     ctx.setTransform(v.dpr, 0, 0, v.dpr, 0, 0);
     ctx.fillStyle = "#0b0f18";
     ctx.fillRect(0, 0, v.W, v.H);
-    if (!v.floor) buildFloor(g.world);
+    if (!v.floor || v.floorTeams !== (g.numTeams || 2)) buildFloor(g.world, g.numTeams || 2);
 
     ctx.save();
     if (v.portrait) ctx.transform(0, -1, 1, 0, v.OX, v.OY + GW * v.TS);

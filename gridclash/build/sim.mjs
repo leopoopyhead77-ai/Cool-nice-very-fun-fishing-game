@@ -98,6 +98,33 @@ for (let k = 0; k < 6; k++) {
 }
 console.log("2v2 wins (hard team vs normal team):", w2);
 
+// free-for-all: 3 and 4 players, every bot on its own team
+for (const n of [3, 4]) {
+  for (let k = 0; k < 3; k++) {
+    const g = createGame({
+      loadouts: Array.from({ length: n }, (_, i) => [ids[(k * 3 + i) % ids.length], ids[(k * 3 + i + 6) % ids.length]]),
+      names: Array.from({ length: n }, (_, i) => "P" + i),
+      teams: Array.from({ length: n }, (_, i) => i),
+      controllers: Array.from({ length: n }, () => createBot("normal")),
+      seed: 900 + n * 10 + k,
+    });
+    if (g.numTeams !== n || g.score.length !== n) throw new Error("FFA team count wrong");
+    let t = 0;
+    let rounds = 0;
+    while (g.state !== "matchEnd" && t < 60 * 60 * 16) {
+      step(g, DT);
+      for (const e of g.events) if (e.t === "roundEnd") rounds++;
+      g.events.length = 0;
+      t++;
+      for (const p of g.players) {
+        if (!Number.isFinite(p.x) || p.x < 0 || p.x > 30 || p.y < 0 || p.y > 20) throw new Error(`FFA ${n}: bad position`);
+      }
+    }
+    if (g.state !== "matchEnd") throw new Error(`FFA ${n} match ${k} never finished`);
+    console.log(`1v1${"v1".repeat(n - 2)} ${k}  score ${g.score.join("-")}  winner ${g.matchWinner}  rounds ${rounds}  ${(t / 60).toFixed(0)}s  dmg ${g.players.map((p) => p.stats.dmg).join("/")}`);
+  }
+}
+
 console.log(`\n${matches} matches, ${(frames / 60 / 60).toFixed(1)} sim-minutes`);
 console.log(`walls built: ${totalWalls}, edits: ${totalEdits}`);
 console.log("rounds fired per gun:", fired);
