@@ -201,10 +201,12 @@ export function wallPlacement(w, players, x, y, angle, mag) {
   return { cells, vertical, valid, blocked };
 }
 
-export function placeWall(w, owner, placement, time) {
+// owner: the builder's player id (only they can edit it); team: for colour.
+export function placeWall(w, owner, placement, time, team = owner) {
   const wall = {
     id: w.nextWallId++,
     owner,
+    team,
     vertical: placement.vertical,
     edit: -1,
     born: time,

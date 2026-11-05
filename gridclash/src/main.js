@@ -6,12 +6,18 @@ import { createInput } from "./input.js";
 import { createRenderer } from "./render.js";
 import { unlockAudio, playEvents, uiClick, audio } from "./audio.js";
 import { load, save } from "./storage.js";
+import { createHost, joinRoom, normalizeCode, encodeWalls } from "./net.js";
+import { createRemoteController, createHostSync, createGuestView } from "./online.js";
 
 const ME = 0;
 const NAMES_BOT = ["YOU", "BOT"];
 const NAMES_PVP = ["BLUE", "RED"];
-let matchMode = "bot"; // "bot" | "pvp"
-const names = () => (matchMode === "pvp" ? NAMES_PVP : NAMES_BOT);
+let matchMode = "bot"; // "bot" | "pvp" | "host" | "guest"
+let curNames = NAMES_BOT;
+const names = () => curNames;
+// which player this phone controls (always 0 except for an online guest)
+let local = 0;
+const online = () => matchMode === "host" || matchMode === "guest";
 const DIFFS = ["easy", "normal", "hard"];
 
 const settings = {
@@ -19,7 +25,10 @@ const settings = {
   loadout2: load("loadout2", ["burst", "smg"]),
   difficulty: load("difficulty", "normal"),
   muted: load("muted", false),
+  netName: load("netName", ""),
+  netMode: load("netMode", "1v1"),
 };
+if (!["1v1", "2v2"].includes(settings.netMode)) settings.netMode = "1v1";
 const validLoadout = (l) => Array.isArray(l) && l.length === 2 && l.every((id) => GUN_BY_ID[id]);
 if (!validLoadout(settings.loadout)) settings.loadout = ["ar", "shotgun"];
 if (!validLoadout(settings.loadout2)) settings.loadout2 = ["burst", "smg"];
@@ -34,11 +43,11 @@ app.innerHTML = `
   <section id="menu" class="screen">
     <div class="menu-card">
       <h1 class="logo">GRID<span>CLASH</span></h1>
-      <p class="tag">1v1 shoot &amp; build arena · 30×20</p>
+      <p class="tag">Shoot &amp; build arena · 1v1 · 2v2 · 30×20</p>
       <div class="menu-grid">
         <button class="btn red big" id="pvp">👥 2 PLAYERS <small>1v1 · same phone</small></button>
         <button class="btn primary big" id="play">▶ PLAY vs BOT</button>
-        <button class="btn big disabled" id="online" aria-disabled="true">🌐 ONLINE <small>coming soon</small></button>
+        <button class="btn big online-btn" id="online">🌐 ONLINE <small>1v1 · 2v2 · any network</small></button>
       </div>
       <div class="row">
         <span class="lbl">Bot</span>
@@ -73,6 +82,43 @@ app.innerHTML = `
     <div class="gun-grid" id="gunGrid"></div>
   </section>
 
+  <section id="online-screen" class="screen hidden">
+    <div class="menu-card">
+      <h2>Online</h2>
+      <p class="tag">Play friends anywhere, on Wi-Fi or mobile data. One phone creates a room; the others join with its code.</p>
+      <div class="row">
+        <span class="lbl">Name</span>
+        <input id="netName" class="inp" maxlength="12" placeholder="Your name" autocomplete="off" />
+      </div>
+      <div class="row">
+        <span class="lbl">Mode</span>
+        <div class="seg" id="netMode"><button data-m="1v1">1v1</button><button data-m="2v2">2v2</button></div>
+      </div>
+      <button class="btn primary big" id="netCreate">Create room</button>
+      <div class="row join-row">
+        <input id="netCode" class="inp code" maxlength="5" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false" />
+        <button class="btn red" id="netJoin">Join room</button>
+      </div>
+      <p id="netStatus" class="status"></p>
+      <div class="row foot"><button class="btn ghost small" id="netBack">‹ Back</button><span class="tag small-note">Empty seats are filled by bots.</span></div>
+    </div>
+  </section>
+
+  <section id="lobby" class="screen hidden">
+    <div class="menu-card">
+      <div class="lobby-head">
+        <div><small class="lbl">Room code</small><div id="lbCode" class="bigcode"></div></div>
+        <div id="lbMode" class="pill"></div>
+      </div>
+      <p class="tag" id="lbHint"></p>
+      <div id="lbSlots" class="slots"></div>
+      <div class="row foot">
+        <button class="btn ghost small" id="lbLeave">Leave</button>
+        <button class="btn primary" id="lbStart">Start match</button>
+      </div>
+    </div>
+  </section>
+
   <section id="help" class="screen hidden">
     <div class="menu-card help">
       <h2>How to play</h2>
@@ -83,6 +129,7 @@ app.innerHTML = `
         <li><b>EDIT</b> — aim at one of your walls and release to cut one tile out (a window/door). Release on the open tile again, or press <b>RESET</b>, to restore it. One edited tile per wall at a time.</li>
         <li><b>Weapon slots</b> — tap to switch, tap the active one to reload.</li>
         <li>Medkits spawn at the top and bottom middle. First to 3 rounds wins.</li>
+        <li><b>Online</b> — Create a room, read the 5-letter code to your friends, they tap Join and type it. Works on mobile data. 1v1 or 2v2; empty seats get bots. The room creator's phone hosts the match, so keep it in the app.</li>
         <li><b>2 Players</b> — the phone turns upright. Blue plays from the bottom end, Red from the top end; each side's controls face its player. Left thumb moves, right thumb aims, BUILD sits above your aim stick. Pick Red's guns with the P2 tab on the loadout screen.</li>
       </ul>
       <p class="kbd">Keyboard: WASD move · mouse aim/release · B build · E edit · R reset/reload · 1/2 weapons</p>
@@ -95,6 +142,7 @@ app.innerHTML = `
       <h2>Paused</h2>
       <button class="btn primary" id="resume">Resume</button>
       <button class="btn" id="restart">Restart match</button>
+      <p class="tag online-only">Online matches keep running while this menu is open.</p>
       <button class="btn ghost" id="quit">Quit to menu</button>
     </div>
   </section>
@@ -114,7 +162,7 @@ app.innerHTML = `
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("cv");
-const screens = ["menu", "loadout", "help", "pause", "results"];
+const screens = ["menu", "loadout", "help", "pause", "results", "online-screen", "lobby"];
 function show(name) {
   for (const s of screens) $(s).classList.toggle("hidden", s !== name);
   input.st.enabled = name === null && !!game;
@@ -147,9 +195,8 @@ $("pvp").addEventListener("click", () => {
   startMatch("pvp");
 });
 $("online").addEventListener("click", () => {
-  const b = $("online");
-  b.classList.add("shake");
-  setTimeout(() => b.classList.remove("shake"), 400);
+  click();
+  openOnline("");
 });
 $("openLoadout").addEventListener("click", () => {
   click();
@@ -235,8 +282,11 @@ $("loBack").addEventListener("click", () => {
 let paused = false;
 function pause() {
   if (!game || game.state === "matchEnd") return;
-  paused = true;
+  paused = !online(); // an online match can't stop for one player
   input.reset();
+  document.body.classList.toggle("is-online", online());
+  $("restart").classList.toggle("hidden", online());
+  $("quit").textContent = online() ? "Leave match" : "Quit to menu";
   show("pause");
 }
 $("resume").addEventListener("click", () => {
@@ -250,16 +300,25 @@ $("restart").addEventListener("click", () => {
 });
 $("quit").addEventListener("click", () => {
   click();
+  if (online()) {
+    leaveOnline("");
+    return;
+  }
   game = null;
   paused = false;
   toMenu();
 });
 $("again").addEventListener("click", () => {
   click();
-  startMatch();
+  if (matchMode === "host") startOnlineMatch();
+  else if (matchMode !== "guest") startMatch();
 });
 $("toMenu").addEventListener("click", () => {
   click();
+  if (online()) {
+    leaveOnline("");
+    return;
+  }
   game = null;
   toMenu();
 });
@@ -273,8 +332,34 @@ function toMenu() {
 }
 
 function showResults() {
-  const won = game.matchWinner === ME;
+  if (!game) return;
+  const myTeam = game.players[local].team;
+  const won = game.matchWinner === myTeam;
   const draw = game.matchWinner < 0;
+  $("again").disabled = matchMode === "guest";
+  $("again").textContent = matchMode === "guest" ? "Waiting for host…" : "Rematch";
+  if (online()) {
+    $("resTitle").textContent = draw ? "DRAW" : won ? "VICTORY" : "DEFEAT";
+    $("resTitle").className = draw ? "" : won ? "win" : "lose";
+    $("resScore").textContent = `${game.score[0]} – ${game.score[1]}`;
+    const acc = (p) => (p.stats.shots ? Math.round((p.stats.hits / p.stats.shots) * 100) + "%" : "–");
+    const head = ["", ...game.players.map((p) => p.name + (p.id === local ? " (you)" : ""))];
+    const rows = [
+      head,
+      ["Damage", ...game.players.map((p) => p.stats.dmg)],
+      ["Accuracy", ...game.players.map(acc)],
+      ["Walls", ...game.players.map((p) => p.stats.walls)],
+    ];
+    $("resStats").innerHTML = rows
+      .map((r, i) => `<tr>${r.map((c, j) => {
+        const cls = j > 0 ? ` class="t${game.players[j - 1].team}"` : "";
+        return i === 0 ? `<th${cls}>${c}</th>` : `<td${cls}>${c}</td>`;
+      }).join("")}</tr>`)
+      .join("");
+    input.reset();
+    show("results");
+    return;
+  }
   if (matchMode === "pvp") {
     $("resTitle").textContent = draw ? "DRAW" : `${NAMES_PVP[game.matchWinner]} WINS`;
     $("resTitle").className = draw ? "" : game.matchWinner === 0 ? "blue" : "lose";
@@ -303,10 +388,15 @@ function showResults() {
 
 let game = null;
 const renderer = createRenderer(canvas);
+// pad i drives player i on a shared phone, otherwise this phone's own player
+const padPlayer = (i) => (game ? game.players[input.st.pvp ? i : local] : null);
 const input = createInput(canvas, {
-  mode: (team) => (game ? game.players[team].mode : "combat"),
-  slot: (team) => (game ? game.players[team].slot : 0),
-  playerScreen: (team) => (game ? renderer.toScreen(game.players[team].x, game.players[team].y) : null),
+  mode: (i) => padPlayer(i)?.mode || "combat",
+  slot: (i) => padPlayer(i)?.slot || 0,
+  playerScreen: (i) => {
+    const p = padPlayer(i);
+    return p ? renderer.toScreen(p.x, p.y) : null;
+  },
   tileSize: () => renderer.v.TS,
   onPause: pause,
   onFirstTouch: unlockAudio,
@@ -335,6 +425,8 @@ function setOrientation(o) {
 
 function startMatch(mode = matchMode) {
   matchMode = mode;
+  local = 0;
+  curNames = mode === "pvp" ? NAMES_PVP : NAMES_BOT;
   setOrientation(mode === "pvp" ? "portrait" : "landscape");
   input.reset();
   input.setPvp(mode === "pvp");
@@ -374,19 +466,29 @@ function frame(now) {
     drawIdle(now / 1000);
     return;
   }
-  if (!paused && game.state !== "matchEnd") {
+  if (matchMode === "guest") {
+    if (guestView) guestView.frame(elapsed);
+  } else if (!paused && game.state !== "matchEnd") {
     acc += elapsed;
     while (acc >= DT) {
       step(game, DT);
       acc -= DT;
       if (game.events.length) {
-        playEvents(game.events, matchMode === "pvp" ? -1 : ME);
+        playEvents(game.events, matchMode === "pvp" ? -1 : local, game.players[local].team);
+        if (hostSync) hostSync.addEvents(game.events);
         if (game.events.some((e) => e.t === "matchEnd")) setTimeout(showResults, 900);
         game.events.length = 0;
       }
     }
   }
-  renderer.draw(game, input, { names: names(), humans: matchMode === "pvp" ? [0, 1] : [ME] });
+  if (hostSync) hostSync.tick(elapsed, encodeWalls);
+  renderer.draw(game, input, {
+    names: names(),
+    humans: matchMode === "pvp" ? [0, 1] : [local],
+    local,
+    tags: game.players.length > 2 || online(),
+    net: online() ? netInfo() : null,
+  });
 }
 
 // A slow-panning demo match behind the main menu.
@@ -402,7 +504,244 @@ function drawIdle(t) {
   }
   step(demo, 1 / 60);
   demo.events.length = 0;
-  renderer.draw(demo, { st: {} }, { names: ["BLUE", "RED"], humans: [] });
+  renderer.draw(demo, { st: {} }, { names: ["BLUE", "RED"], humans: [], local: 0 });
+}
+
+// ---- online -----------------------------------------------------------------------
+
+let host = null;      // when this phone created the room
+let guest = null;     // when this phone joined one
+let guestView = null;
+let hostSync = null;
+let lobbyInfo = null;
+
+function netInfo() {
+  if (matchMode === "host") {
+    const humans = host ? [...host.guests.values()] : [];
+    const direct = humans.filter((g) => g.dc && g.dc.readyState === "open").length;
+    const pings = host ? host.slots.filter((s) => s && s.ping).map((s) => s.ping) : [];
+    return { host: true, ping: pings.length ? Math.max(...pings) : 0, direct: humans.length > 0 && direct === humans.length, code: host?.code };
+  }
+  return { host: false, ping: guest ? guest.rtt : 0, direct: guest ? guest.direct : false, code: guest?.code };
+}
+
+function setNetStatus(text, bad) {
+  $("netStatus").textContent = text || "";
+  $("netStatus").classList.toggle("bad", !!bad);
+}
+
+function refreshOnline(fillName) {
+  if (fillName) $("netName").value = settings.netName;
+  $("netMode").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.m === settings.netMode));
+}
+
+function openOnline(message) {
+  setOrientation("landscape");
+  input.setPvp(false);
+  resize();
+  refreshOnline(true);
+  setNetStatus(message, !!message);
+  show("online-screen");
+}
+
+function playerName() {
+  const n = $("netName").value.trim().slice(0, 12);
+  settings.netName = n;
+  save("netName", n);
+  return n || "Player";
+}
+
+$("netMode").addEventListener("click", (e) => {
+  const m = e.target.closest("button")?.dataset.m;
+  if (!m) return;
+  settings.netMode = m;
+  save("netMode", m);
+  click();
+  refreshOnline();
+});
+$("netBack").addEventListener("click", () => {
+  click();
+  toMenu();
+});
+$("netCode").addEventListener("input", (e) => {
+  e.target.value = normalizeCode(e.target.value);
+});
+
+$("netCreate").addEventListener("click", async () => {
+  click();
+  const name = playerName();
+  setNetStatus("Creating room…");
+  $("netCreate").disabled = true;
+  try {
+    host = await createHost({
+      mode: settings.netMode,
+      name,
+      loadout: settings.loadout.slice(),
+      onStatus: (t) => setNetStatus(t),
+      onLobby: () => renderLobby(),
+      onGuestMessage: (slot, m) => {
+        if (m.t === "c" && hostRemotes[slot]) hostRemotes[slot].receive(m);
+      },
+      onGuestLeft: (slot) => {
+        // mid-match: a bot takes over the empty seat
+        if (game && matchMode === "host" && game.controllers[slot] === hostRemotes[slot]) {
+          game.controllers[slot] = createBot(settings.difficulty);
+          game.players[slot].name += " (bot)";
+          hostRemotes[slot] = null;
+        }
+      },
+    });
+    setNetStatus("");
+    renderLobby();
+    show("lobby");
+  } catch (e) {
+    setNetStatus(e.message || String(e), true);
+  } finally {
+    $("netCreate").disabled = false;
+  }
+});
+
+$("netJoin").addEventListener("click", async () => {
+  click();
+  const code = normalizeCode($("netCode").value);
+  if (code.length !== 5) {
+    setNetStatus("Enter the 5-character room code", true);
+    return;
+  }
+  const name = playerName();
+  setNetStatus("Joining " + code + "…");
+  $("netJoin").disabled = true;
+  try {
+    guest = await joinRoom({
+      code, name,
+      loadout: settings.loadout.slice(),
+      onStatus: (t) => setNetStatus(t),
+      onLobby: (m, me) => {
+        lobbyInfo = m;
+        if (me >= 0 && !guestView) {
+          renderLobby();
+          show("lobby");
+        }
+      },
+      onStart: (m, slot) => startGuestMatch(m, slot),
+      onSnapshot: (snap) => {
+        if (!guestView) return;
+        const ev = guestView.snapshot(snap);
+        if (ev.length) playEvents(ev, local, game.players[local].team);
+        if (ev.some((e) => e.t === "matchEnd")) setTimeout(showResults, 900);
+      },
+      onClosed: (why) => leaveOnline(why),
+    });
+    setNetStatus("Waiting for the host…");
+  } catch (e) {
+    setNetStatus("Couldn't join: " + (e.message || e), true);
+  } finally {
+    $("netJoin").disabled = false;
+  }
+});
+
+function renderLobby() {
+  const isHost = !!host;
+  const code = isHost ? host.code : guest?.code;
+  const size = isHost ? host.size : lobbyInfo?.size || 2;
+  const slots = isHost
+    ? host.slots.map((s) => (s ? { name: s.name, cid: s.cid, link: s.link, ping: s.ping } : null))
+    : lobbyInfo?.slots || [];
+  $("lbCode").textContent = code || "";
+  $("lbMode").textContent = size === 4 ? "2v2" : "1v1";
+  $("lbHint").textContent = isHost
+    ? "Tell your friends this code. They tap ONLINE → Join room. Start whenever you're ready; empty seats get bots."
+    : "You're in! Waiting for the host to start the match…";
+  const mine = isHost ? "host" : guest?.cid;
+  $("lbSlots").innerHTML = Array.from({ length: size }, (_, i) => {
+    const s = slots[i];
+    const team = i % 2;
+    const link = s && s.cid !== "host" ? (s.link === "direct" ? "direct" : "relay") + (s.ping ? ` · ${s.ping} ms` : "") : s ? "host" : "";
+    return `<div class="slot t${team}${s && s.cid === mine ? " me" : ""}">
+      <span class="dot"></span>
+      <span class="sname">${s ? escapeHtml(s.name) + (s.cid === mine ? " (you)" : "") : "Empty — bot"}</span>
+      <span class="slink">${link}</span>
+      ${isHost && s && s.cid !== "host" ? `<button class="kick" data-slot="${i}">✕</button>` : ""}
+    </div>`;
+  }).join("");
+  $("lbStart").classList.toggle("hidden", !isHost);
+}
+
+function escapeHtml(t) {
+  return String(t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+$("lbSlots").addEventListener("click", (e) => {
+  const b = e.target.closest(".kick");
+  if (b && host) host.kick(Number(b.dataset.slot));
+});
+$("lbStart").addEventListener("click", () => {
+  click();
+  startOnlineMatch();
+});
+$("lbLeave").addEventListener("click", () => {
+  click();
+  leaveOnline("");
+});
+
+let hostRemotes = [];
+
+function startOnlineMatch() {
+  if (!host) return;
+  const valid = (l) => Array.isArray(l) && l.length === 2 && l.every((id) => GUN_BY_ID[id]);
+  const slots = host.slots;
+  const loadouts = slots.map((s, i) => (i === 0 ? settings.loadout.slice() : s && valid(s.loadout) ? s.loadout : botLoadout()));
+  const nm = slots.map((s, i) => (s ? s.name : `BOT ${i + 1}`));
+  const teams = slots.map((_, i) => i % 2);
+  hostRemotes = slots.map((s, i) => (i > 0 && s && !s.left ? createRemoteController() : null));
+  const controllers = slots.map((s, i) => (i === 0 ? input.controllers[0] : hostRemotes[i] || createBot(settings.difficulty)));
+  const mid = Math.random().toString(36).slice(2, 10);
+  const seed = Math.floor(Math.random() * 1e9);
+  matchMode = "host";
+  local = 0;
+  curNames = nm;
+  input.reset();
+  input.setPvp(false);
+  resize();
+  game = createGame({ loadouts, names: nm, controllers, seed, teams });
+  host.started = true;
+  hostSync = createHostSync(host, game, mid, hostRemotes);
+  const msg = { t: "start", mid, seed, loadouts, names: nm, teams, slots: slots.map((s) => (s ? s.cid : null)) };
+  host.broadcast(msg);
+  // the start message is important: repeat it in case a guest misses one
+  [600, 1300, 2200].forEach((ms) => setTimeout(() => host && host.started && hostSync && host.broadcast(msg), ms));
+  paused = false;
+  show(null);
+}
+
+function startGuestMatch(m, slot) {
+  if (guestView && guestView.mid === m.mid) return;
+  matchMode = "guest";
+  local = slot;
+  curNames = m.names;
+  input.reset();
+  input.setPvp(false);
+  resize();
+  guestView = createGuestView(m, slot, guest, input);
+  game = guestView.game;
+  paused = false;
+  show(null);
+}
+
+function leaveOnline(reason) {
+  if (host) host.close();
+  if (guest) guest.leave();
+  host = null;
+  guest = null;
+  guestView = null;
+  hostSync = null;
+  hostRemotes = [];
+  lobbyInfo = null;
+  game = null;
+  paused = false;
+  matchMode = "bot";
+  local = 0;
+  openOnline(reason);
 }
 
 resize();
@@ -415,6 +754,8 @@ window.__clash = {
   get game() { return game; },
   get layout() { return input.st.L; },
   get mode() { return matchMode; },
+  get local() { return local; },
+  get net() { return { host, guest, guestView }; },
   toScreen: (x, y) => renderer.toScreen(x, y),
   startMatch,
   settings,

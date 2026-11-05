@@ -8,6 +8,9 @@
 
     <!-- haptic feedback on hits and builds; a normal permission, no prompt -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- online play: rooms meet on a public relay over wss (normal permission, no prompt) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
         android:label="@string/app_name"

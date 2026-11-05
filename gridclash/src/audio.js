@@ -69,10 +69,11 @@ const SHOT = {
 };
 
 // Plays the sounds for one frame's worth of game events.
-export function playEvents(events, me) {
+// me: the local player id (-1 = everyone on this phone); myTeam: their team
+export function playEvents(events, me, myTeam = me) {
   for (const e of events) {
     // me < 0: both players share this phone, so every event is local
-    const mine = me < 0 || e.team === me;
+    const mine = me < 0 || e.pid === me;
     switch (e.t) {
       case "shot": SHOT[e.gun]?.(); break;
       case "boom": noise(0.6, 400, 0.6, 0.8); tone(90, 30, 0.5, 0.25, "sine"); break;
@@ -97,7 +98,7 @@ export function playEvents(events, me) {
       case "death": tone(400, 40, 0.7, 0.2, "sawtooth"); noise(0.5, 500, 0.6, 0.4); if (mine) vibrate(120); break;
       case "go": tone(660, 880, 0.18, 0.15, "square"); break;
       case "roundEnd": tone(520, 260, 0.4, 0.12, "triangle"); break;
-      case "matchEnd": tone(me < 0 || e.winner === me ? 520 : 300, me < 0 || e.winner === me ? 1040 : 120, 0.7, 0.15, "triangle"); break;
+      case "matchEnd": tone(me < 0 || e.winner === myTeam ? 520 : 300, me < 0 || e.winner === myTeam ? 1040 : 120, 0.7, 0.15, "triangle"); break;
     }
   }
 }

@@ -71,6 +71,33 @@ if (harmless.length) {
   process.exit(1);
 }
 
+// 2v2: four bots, every team member must be able to fight, build and die
+let w2 = [0, 0];
+for (let k = 0; k < 6; k++) {
+  const lo = [0, 1, 2, 3].map((i) => [ids[(k * 4 + i) % ids.length], ids[(k * 4 + i + 5) % ids.length]]);
+  const g = createGame({
+    loadouts: lo,
+    names: ["A1", "B1", "A2", "B2"],
+    controllers: [0, 1, 2, 3].map((i) => createBot(i % 2 === 0 ? "hard" : "normal")),
+    seed: 500 + k,
+  });
+  let t = 0;
+  while (g.state !== "matchEnd" && t < 60 * 60 * 16) {
+    step(g, DT);
+    g.events.length = 0;
+    t++;
+    for (const p of g.players) {
+      if (!Number.isFinite(p.x) || p.x < 0 || p.x > 30 || p.y < 0 || p.y > 20) throw new Error(`2v2 match ${k}: bad position`);
+    }
+  }
+  if (g.state !== "matchEnd") throw new Error(`2v2 match ${k} never finished`);
+  if (g.matchWinner >= 0) w2[g.matchWinner]++;
+  const dmg = g.players.map((p) => p.stats.dmg);
+  console.log(`2v2 ${k}  score ${g.score.join("-")}  ${(t / 60).toFixed(0)}s  dmg ${dmg.join("/")}  walls ${g.players.map((p) => p.stats.walls).join("/")}`);
+  if (dmg.some((d) => d === 0) && t > 60 * 60) console.warn("  (a player dealt no damage)");
+}
+console.log("2v2 wins (hard team vs normal team):", w2);
+
 console.log(`\n${matches} matches, ${(frames / 60 / 60).toFixed(1)} sim-minutes`);
 console.log(`walls built: ${totalWalls}, edits: ${totalEdits}`);
 console.log("rounds fired per gun:", fired);

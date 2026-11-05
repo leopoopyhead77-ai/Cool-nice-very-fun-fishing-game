@@ -169,7 +169,7 @@ export function createBot(difficulty = "normal") {
       } else if (!losClear && dist <= def.range && def.type !== "lob") {
         const r = raycast(w, p.x, p.y, dx / dist, dy / dist, dist);
         const t = r.hit ? tileAt(w, r.cx, r.cy) : null;
-        if (t && t.wall.owner === p.team && r.dist < 2.8 && rand() < D.edit * dt * 4) {
+        if (t && t.wall.owner === p.id && r.dist < 2.8 && rand() < D.edit * dt * 4) {
           // only worth it if that tile is the only thing in the way
           const beyond = raycast(w, r.cx + 0.5, r.cy + 0.5, dx / dist, dy / dist, Math.hypot(e.x - r.cx - 0.5, e.y - r.cy - 0.5),
             (ww, cx, cy) => !(cx === r.cx && cy === r.cy) && isSolid(ww, cx, cy));
@@ -213,7 +213,7 @@ export function createBot(difficulty = "normal") {
         if (!losClear && dist <= def.range && s.path.length === 0) {
           const r = raycast(w, p.x, p.y, dx / dist, dy / dist, dist);
           const t = r.hit ? tileAt(w, r.cx, r.cy) : null;
-          if (t && t.wall.owner !== p.team && p.cd <= 0 && !p.burst && p.reloadT <= 0) {
+          if (t && t.wall.team !== p.team && p.cd <= 0 && !p.burst && p.reloadT <= 0) {
             const a = Math.atan2(r.cy + 0.5 - p.y, r.cx + 0.5 - p.x);
             cmd.actions.push({ t: "fire", angle: a, mag: 0.5 });
           }
@@ -225,7 +225,7 @@ export function createBot(difficulty = "normal") {
       let my = 0;
       // dodge incoming grenades
       for (const b of g.bullets) {
-        if (b.kind !== "lob" || b.owner === p.team) continue;
+        if (b.kind !== "lob" || g.players[b.owner].team === p.team) continue;
         const bd = Math.hypot(p.x - b.tx, p.y - b.ty);
         if (bd < b.def.radius + 0.8) {
           mx += (p.x - b.tx) / (bd + 0.01);

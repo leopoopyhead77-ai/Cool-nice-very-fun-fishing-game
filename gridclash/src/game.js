@@ -40,9 +40,9 @@ function makeStats() {
   return { dmg: 0, shots: 0, hits: 0, walls: 0, edits: 0, kills: 0 };
 }
 
-function makePlayer(team, loadout, name) {
+function makePlayer(id, team, loadout, name) {
   return {
-    team, name,
+    id, team, name,
     x: 0, y: 0, vx: 0, vy: 0, r: 0.38,
     hp: MAX_HP, alive: true,
     loadout,
@@ -56,10 +56,14 @@ function makePlayer(team, loadout, name) {
   };
 }
 
-export function createGame({ loadouts, names, controllers, seed }) {
+// loadouts / names / controllers: one entry per player. teams: team (0 blue,
+// 1 red) per player; defaults to alternating, so 2 players = 1v1 and
+// 4 players = 2v2 with ids 0,2 on blue and 1,3 on red.
+export function createGame({ loadouts, names, controllers, seed, teams }) {
+  const tm = teams || loadouts.map((_, i) => i % 2);
   const g = {
     world: createWorld(),
-    players: [0, 1].map((t) => makePlayer(t, loadouts[t], names[t])),
+    players: loadouts.map((l, i) => makePlayer(i, tm[i], l, names[i])),
     controllers,
     bullets: [],
     beams: [],
@@ -104,9 +108,11 @@ function resetRound(g) {
     m.up = false;
     m.t = MEDKIT_EVERY * 0.5;
   }
-  g.players.forEach((p, i) => {
-    p.x = SPAWNS[i].x;
-    p.y = SPAWNS[i].y;
+  g.players.forEach((p) => {
+    const mates = g.players.filter((q) => q.team === p.team);
+    const k = mates.indexOf(p);
+    p.x = SPAWNS[p.team].x;
+    p.y = mates.length === 1 ? SPAWNS[p.team].y : 6.5 + (7 * k) / (mates.length - 1);
     p.vx = p.vy = 0;
     p.hp = MAX_HP;
     p.alive = true;
@@ -115,13 +121,28 @@ function resetRound(g) {
     p.burst = null;
     p.mats = START_MATS;
     p.mode = "combat";
-    p.facing = i === 0 ? 0 : Math.PI;
+    p.facing = p.team === 0 ? 0 : Math.PI;
     p.aiming = false;
     p.roundDmg = 0;
   });
 }
 
-export const enemyOf = (g, p) => g.players[1 - p.team];
+export const enemiesOf = (g, p) => g.players.filter((q) => q.team !== p.team);
+
+// The nearest living enemy (or any enemy, if all are down).
+export function enemyOf(g, p) {
+  let best = null;
+  let bestD = Infinity;
+  for (const q of g.players) {
+    if (q.team === p.team) continue;
+    const d = (q.alive ? 0 : 1e6) + Math.hypot(q.x - p.x, q.y - p.y);
+    if (d < bestD) {
+      bestD = d;
+      best = q;
+    }
+  }
+  return best;
+}
 export const gunOf = (p) => p.guns[p.slot];
 
 const emit = (g, e) => g.events.push(e);
@@ -156,9 +177,10 @@ export function step(g, dt) {
     if (g.timeLeft <= 0 && g.state === "fight") {
       // time out: more health wins; equal health goes to whoever dealt more
       // damage this round; only a true tie is a draw
-      const [a, b] = g.players;
-      const key = (p) => p.hp * 1000 + p.roundDmg;
-      endRound(g, key(a) === key(b) ? -1 : key(a) > key(b) ? 0 : 1);
+      const key = (t) => g.players.reduce((n, p) => n + (p.team === t ? p.hp * 1000 + p.roundDmg : 0), 0);
+      const a = key(0);
+      const b = key(1);
+      endRound(g, a === b ? -1 : a > b ? 0 : 1);
     }
   } else if (g.state === "roundEnd") {
     g.stateT -= dt;
@@ -220,7 +242,7 @@ function handleAction(g, p, a) {
     case "mode":
       if (p.mode !== a.mode) {
         p.mode = a.mode;
-        emit(g, { t: "mode", team: p.team, mode: a.mode });
+        emit(g, { t: "mode", pid: p.id, team: p.team, mode: a.mode });
       }
       break;
     case "fire":
@@ -254,7 +276,7 @@ function selectSlot(g, p, slot) {
   p.burst = null;
   p.reloadT = 0;
   if (p.mode !== "combat") p.mode = "combat";
-  emit(g, { t: "swap", team: p.team });
+  emit(g, { t: "swap", pid: p.id, team: p.team });
   if (gunOf(p).ammo <= 0) startReload(g, p);
 }
 
@@ -263,19 +285,25 @@ function startReload(g, p) {
   if (p.reloadT > 0 || gun.ammo >= gun.def.mag) return;
   p.reloadT = gun.def.reload;
   p.burst = null;
-  emit(g, { t: "reload", team: p.team });
+  emit(g, { t: "reload", pid: p.id, team: p.team });
 }
 
 // The angle a tap fires at: straight at the enemy if they are in range and
 // visible, otherwise wherever the player is facing.
 export function autoAim(g, p) {
-  const e = enemyOf(g, p);
   const def = gunOf(p).def;
-  const d = Math.hypot(e.x - p.x, e.y - p.y);
-  const visible = def.type === "lob" || def.type === "rail" || lineClear(g.world, p.x, p.y, e.x, e.y);
-  if (e.alive && d <= def.range + 0.5 && visible) {
-    return { angle: Math.atan2(e.y - p.y, e.x - p.x), mag: Math.min(1, d / def.range) };
+  let best = null;
+  let bestD = Infinity;
+  for (const e of enemiesOf(g, p)) {
+    if (!e.alive) continue;
+    const d = Math.hypot(e.x - p.x, e.y - p.y);
+    const visible = def.type === "lob" || def.type === "rail" || lineClear(g.world, p.x, p.y, e.x, e.y);
+    if (d <= def.range + 0.5 && visible && d < bestD) {
+      bestD = d;
+      best = e;
+    }
   }
+  if (best) return { angle: Math.atan2(best.y - p.y, best.x - p.x), mag: Math.min(1, bestD / def.range) };
   return { angle: p.facing, mag: 0.6 };
 }
 
@@ -302,7 +330,7 @@ function fireRound(g, p, angle, mag) {
   p.recoil = 1;
   const mx = p.x + Math.cos(angle) * (p.r + 0.12);
   const my = p.y + Math.sin(angle) * (p.r + 0.12);
-  emit(g, { t: "shot", team: p.team, gun: def.id });
+  emit(g, { t: "shot", pid: p.id, team: p.team, gun: def.id });
 
   if (def.type === "rail") {
     fireRail(g, p, def, angle);
@@ -313,7 +341,7 @@ function fireRound(g, p, angle, mag) {
     const tx = p.x + Math.cos(angle) * dist;
     const ty = p.y + Math.sin(angle) * dist;
     g.bullets.push({
-      kind: "lob", owner: p.team, def,
+      kind: "lob", owner: p.id, def,
       sx: mx, sy: my, tx: clampX(tx), ty: clampY(ty),
       x: mx, y: my, t: 0, T: dist / def.speed, h: 0,
     });
@@ -327,7 +355,7 @@ function fireRound(g, p, angle, mag) {
       a += (g.rng() - 0.5) * def.spread;
     }
     g.bullets.push({
-      kind: def.type, owner: p.team, def,
+      kind: def.type, owner: p.id, def,
       x: mx, y: my, px: mx, py: my,
       dx: Math.cos(a), dy: Math.sin(a),
       speed: def.speed * (def.flame ? 0.85 + g.rng() * 0.3 : 1),
@@ -351,10 +379,9 @@ function fireRail(g, p, def, angle) {
     return false;
   });
   const len = stop.hit ? stop.dist : def.range;
-  for (const [cx, cy] of pierced) hitTile(g, cx, cy, def.dmg * def.tile, p.team);
-  const e = enemyOf(g, p);
-  if (e.alive && segCircle(p.x, p.y, dx, dy, len, e.x, e.y, e.r) >= 0) {
-    damagePlayer(g, e, def.dmg, p);
+  for (const [cx, cy] of pierced) hitTile(g, cx, cy, def.dmg * def.tile, p.id);
+  for (const e of enemiesOf(g, p)) {
+    if (e.alive && segCircle(p.x, p.y, dx, dy, len, e.x, e.y, e.r) >= 0) damagePlayer(g, e, def.dmg, p);
   }
   g.beams.push({
     x0: p.x + dx * 0.4, y0: p.y + dy * 0.4,
@@ -383,7 +410,7 @@ function updatePlayers(g, dt) {
         p.reloadT = 0;
         const gun = gunOf(p);
         gun.ammo = gun.def.mag;
-        emit(g, { t: "reloaded", team: p.team });
+        emit(g, { t: "reloaded", pid: p.id, team: p.team });
       }
     }
     if (p.burst) {
@@ -406,20 +433,24 @@ function updatePlayers(g, dt) {
     }
   }
   // players shove each other apart
-  const [a, b] = g.players;
-  if (a.alive && b.alive) {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const d = Math.hypot(dx, dy);
-    const min = a.r + b.r;
-    if (d < min && d > 1e-6) {
-      const push = (min - d) / 2;
-      a.x -= (dx / d) * push;
-      a.y -= (dy / d) * push;
-      b.x += (dx / d) * push;
-      b.y += (dy / d) * push;
-      collideCircle(g.world, a);
-      collideCircle(g.world, b);
+  for (let i = 0; i < g.players.length; i++) {
+    for (let j = i + 1; j < g.players.length; j++) {
+      const a = g.players[i];
+      const b = g.players[j];
+      if (!a.alive || !b.alive) continue;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const d = Math.hypot(dx, dy);
+      const min = a.r + b.r;
+      if (d < min && d > 1e-6) {
+        const push = (min - d) / 2;
+        a.x -= (dx / d) * push;
+        a.y -= (dy / d) * push;
+        b.x += (dx / d) * push;
+        b.y += (dy / d) * push;
+        collideCircle(g.world, a);
+        collideCircle(g.world, b);
+      }
     }
   }
 }
@@ -442,7 +473,7 @@ function updateMedkits(g, dt) {
         m.up = false;
         m.t = MEDKIT_EVERY;
         addText(g, p.x, p.y - 0.6, `+${Math.round(heal)}`, "#6dff9a");
-        emit(g, { t: "heal", team: p.team });
+        emit(g, { t: "heal", pid: p.id, team: p.team });
         break;
       }
     }
@@ -475,7 +506,7 @@ function updateBullets(g, dt) {
     let hitDist = ray.hit ? ray.dist : len;
     let target = null;
     for (const p of g.players) {
-      if (!p.alive || p.team === b.owner) continue;
+      if (!p.alive || p.team === g.players[b.owner].team) continue;
       const t = segCircle(b.x, b.y, b.dx, b.dy, hitDist, p.x, p.y, p.r);
       if (t >= 0 && t <= hitDist) {
         hitDist = t;
@@ -506,10 +537,10 @@ function updateBullets(g, dt) {
   }
 }
 
-function hitTile(g, cx, cy, amount, byTeam) {
+function hitTile(g, cx, cy, amount, byPid) {
   const t = tileAt(g.world, cx, cy);
   if (!t) return;
-  const color = t.wall.owner === 0 ? "#7cc4ff" : "#ff8a94";
+  const color = t.wall.team === 0 ? "#7cc4ff" : "#ff8a94";
   if (damageTile(g.world, cx, cy, amount)) {
     for (let k = 0; k < 10; k++) {
       g.particles.push({
@@ -518,29 +549,31 @@ function hitTile(g, cx, cy, amount, byTeam) {
         life: 0.5 + g.rng() * 0.4, t: 0, size: 0.12 + g.rng() * 0.12, color,
       });
     }
-    emit(g, { t: "tileBreak", team: byTeam });
+    emit(g, { t: "tileBreak", pid: byPid, x: cx + 0.5, y: cy + 0.5, color });
   } else {
     emit(g, { t: "tileHit" });
   }
 }
 
-function explode(g, x, y, def, ownerTeam) {
+function explode(g, x, y, def, ownerId) {
   const R = def.radius;
-  const owner = g.players[ownerTeam];
+  const owner = g.players[ownerId];
   for (const p of g.players) {
     if (!p.alive) continue;
+    // no friendly fire, but your own blast still hurts you (a little)
+    if (p.team === owner.team && p !== owner) continue;
     const d = Math.hypot(p.x - x, p.y - y);
     if (d > R + p.r) continue;
     let dmg = def.dmg * (1 - 0.5 * Math.min(1, d / R));
     if (!lineClear(g.world, x, y, p.x, p.y)) dmg *= 0.35;
-    if (p.team === ownerTeam) dmg *= 0.4; // self-damage hurts, but less
+    if (p === owner) dmg *= 0.4;
     damagePlayer(g, p, dmg, owner);
   }
   const r = Math.ceil(R);
   for (let cy = Math.floor(y) - r; cy <= Math.floor(y) + r; cy++) {
     for (let cx = Math.floor(x) - r; cx <= Math.floor(x) + r; cx++) {
       const d = Math.hypot(cx + 0.5 - x, cy + 0.5 - y);
-      if (d <= R) hitTile(g, cx, cy, def.dmg * def.tile * (1 - 0.4 * (d / R)), ownerTeam);
+      if (d <= R) hitTile(g, cx, cy, def.dmg * def.tile * (1 - 0.4 * (d / R)), ownerId);
     }
   }
   g.booms.push({ x, y, R, t: 0, life: 0.45, color: def.color });
@@ -554,7 +587,7 @@ function explode(g, x, y, def, ownerTeam) {
     });
   }
   g.shake = Math.max(g.shake, 0.6);
-  emit(g, { t: "boom" });
+  emit(g, { t: "boom", x, y, R, color: def.color });
 }
 
 function damagePlayer(g, p, amount, by) {
@@ -568,7 +601,7 @@ function damagePlayer(g, p, amount, by) {
     by.roundDmg += amount;
   }
   addText(g, p.x + (g.rng() - 0.5) * 0.5, p.y - 0.7, String(amount), amount >= 50 ? "#ffd23f" : "#ffffff");
-  emit(g, { t: "hurt", team: p.team, amount });
+  emit(g, { t: "hurt", pid: p.id, team: p.team, amount });
   if (p.hp <= 0) {
     p.hp = 0;
     p.alive = false;
@@ -584,8 +617,9 @@ function damagePlayer(g, p, amount, by) {
       });
     }
     g.shake = Math.max(g.shake, 0.8);
-    emit(g, { t: "death", team: p.team });
-    endRound(g, 1 - p.team);
+    emit(g, { t: "death", pid: p.id, team: p.team, x: p.x, y: p.y });
+    // the round ends when a whole team is down
+    if (!g.players.some((q) => q.alive && q.team === p.team)) endRound(g, 1 - p.team);
   }
 }
 
@@ -629,18 +663,18 @@ function tryBuild(g, p, a) {
   const mag = a.tap ? 0 : a.mag;
   const place = buildPreview(g, p, angle, mag);
   if (!place.valid || p.mats < WALL_COST) {
-    emit(g, { t: "deny", team: p.team });
+    emit(g, { t: "deny", pid: p.id, team: p.team });
     return false;
   }
-  placeWall(g.world, p.team, place, g.time);
+  placeWall(g.world, p.id, place, g.time, p.team);
   p.mats -= WALL_COST;
   p.stats.walls++;
-  emit(g, { t: "build", team: p.team });
+  emit(g, { t: "build", pid: p.id, team: p.team });
   return true;
 }
 
 export function editPreview(g, p, angle) {
-  return editTarget(g.world, p.team, p.x, p.y, angle);
+  return editTarget(g.world, p.id, p.x, p.y, angle);
 }
 
 const cellOccupied = (g, cx, cy) =>
@@ -652,7 +686,7 @@ function tryEdit(g, p, a) {
   const angle = a.tap ? p.facing : a.angle;
   const target = editPreview(g, p, angle);
   if (!target) {
-    emit(g, { t: "deny", team: p.team });
+    emit(g, { t: "deny", pid: p.id, team: p.team });
     return false;
   }
   const { wall, i } = target;
@@ -660,13 +694,13 @@ function tryEdit(g, p, a) {
   if (wall.edit >= 0) {
     const open = wall.cells[wall.edit];
     if (cellOccupied(g, open.x, open.y)) {
-      emit(g, { t: "deny", team: p.team });
+      emit(g, { t: "deny", pid: p.id, team: p.team });
       return false;
     }
   }
   wall.edit = i;
   p.stats.edits++;
-  emit(g, { t: "edit", team: p.team });
+  emit(g, { t: "edit", pid: p.id, team: p.team });
   return true;
 }
 
@@ -674,11 +708,11 @@ function restoreWall(g, p, wall) {
   if (wall.edit < 0) return false;
   const open = wall.cells[wall.edit];
   if (cellOccupied(g, open.x, open.y)) {
-    emit(g, { t: "deny", team: p.team });
+    emit(g, { t: "deny", pid: p.id, team: p.team });
     return false;
   }
   wall.edit = -1;
-  emit(g, { t: "restore", team: p.team });
+  emit(g, { t: "restore", pid: p.id, team: p.team });
   return true;
 }
 
@@ -690,7 +724,7 @@ function tryReset(g, p, a) {
   }
   const target = nearestEditedWall(g, p);
   if (target) return restoreWall(g, p, target);
-  emit(g, { t: "deny", team: p.team });
+  emit(g, { t: "deny", pid: p.id, team: p.team });
   return false;
 }
 
@@ -698,7 +732,7 @@ export function nearestEditedWall(g, p, reach = 6) {
   let best = null;
   let bestD = reach;
   for (const wall of g.world.walls) {
-    if (wall.owner !== p.team || wall.edit < 0) continue;
+    if (wall.owner !== p.id || wall.edit < 0) continue;
     const c = wall.cells[wall.edit];
     const d = Math.hypot(c.x + 0.5 - p.x, c.y + 0.5 - p.y);
     if (d < bestD) {
@@ -713,23 +747,86 @@ export function nearestEditedWall(g, p, reach = 6) {
 export function traceShot(g, p, angle, def) {
   const dx = Math.cos(angle);
   const dy = Math.sin(angle);
+  const enemies = enemiesOf(g, p).filter((e) => e.alive);
   if (def.type === "rail") {
     const stop = raycast(g.world, p.x, p.y, dx, dy, def.range, (w, cx, cy) => !inBounds(cx, cy) || isRock(w, cx, cy));
     const len = stop.hit ? stop.dist : def.range;
-    const e = enemyOf(g, p);
-    const onTarget = e.alive && segCircle(p.x, p.y, dx, dy, len, e.x, e.y, e.r) >= 0;
+    const onTarget = enemies.some((e) => segCircle(p.x, p.y, dx, dy, len, e.x, e.y, e.r) >= 0);
     return { len, onTarget };
   }
   const ray = raycast(g.world, p.x, p.y, dx, dy, def.range, isSolid);
   let len = ray.hit ? ray.dist : def.range;
-  const e = enemyOf(g, p);
   let onTarget = false;
-  if (e.alive) {
+  for (const e of enemies) {
     const t = segCircle(p.x, p.y, dx, dy, len, e.x, e.y, e.r);
-    if (t >= 0) {
+    if (t >= 0 && t <= len) {
       len = t;
       onTarget = true;
     }
   }
   return { len, onTarget, blocked: ray.hit && !onTarget };
+}
+
+// The movement half of applyCommand + updatePlayers, for a guest predicting
+// its own player between snapshots. Same maths, so prediction matches the host.
+export function predictMove(g, p, mx, my, aiming, dt) {
+  const ml = Math.hypot(mx, my);
+  if (ml > 1) {
+    mx /= ml;
+    my /= ml;
+  }
+  const speed = MOVE_SPEED * (aiming ? 0.82 : 1);
+  const k = Math.min(1, dt * 14);
+  p.vx += (mx * speed - p.vx) * k;
+  p.vy += (my * speed - p.vy) * k;
+  p.x += p.vx * dt;
+  p.y += p.vy * dt;
+  collideCircle(g.world, p);
+}
+
+// ---- online guests: visuals only ----------------------------------------------
+// A guest phone doesn't simulate the match; it shows the host's snapshots.
+// Between snapshots it moves projectiles along and ages effects so motion
+// stays smooth, and turns the host's events into local particles.
+
+export function stepVisual(g, dt) {
+  g.time += dt;
+  g.shake = Math.max(0, g.shake - dt * 3);
+  for (const p of g.players) {
+    p.hitFlash = Math.max(0, p.hitFlash - dt * 4);
+    p.recoil = Math.max(0, p.recoil - dt * 9);
+  }
+  for (const b of g.bullets) {
+    if (b.kind === "lob") {
+      b.t = Math.min(b.T, b.t + dt);
+      const k = b.T > 0 ? b.t / b.T : 1;
+      b.x = b.sx + (b.tx - b.sx) * k;
+      b.y = b.sy + (b.ty - b.sy) * k;
+      b.h = 4 * k * (1 - k) * Math.min(2.4, 0.6 + b.T * 1.6);
+    } else {
+      const step = Math.min(b.speed * dt, Math.max(0, b.left));
+      b.x += b.dx * step;
+      b.y += b.dy * step;
+      b.left -= step;
+      b.age += dt;
+    }
+  }
+  updateFx(g, dt);
+}
+
+export function particlesForEvent(g, e) {
+  const burst = (x, y, n, colors, speed, life) => {
+    for (let k = 0; k < n; k++) {
+      const a = g.rng() * Math.PI * 2;
+      const sp = speed * (0.3 + g.rng());
+      g.particles.push({
+        x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        life: life * (0.6 + g.rng() * 0.6), t: 0, size: 0.1 + g.rng() * 0.14,
+        color: colors[k % colors.length],
+      });
+    }
+  };
+  if (e.t === "boom") burst(e.x, e.y, 18, ["#ffd27a", "#ff6b4a"], 6, 0.6);
+  else if (e.t === "tileBreak") burst(e.x, e.y, 10, [e.color], 4, 0.7);
+  else if (e.t === "death") burst(e.x, e.y, 26, [e.team === 0 ? "#3fa7ff" : "#ff4d5e"], 5, 0.9);
 }

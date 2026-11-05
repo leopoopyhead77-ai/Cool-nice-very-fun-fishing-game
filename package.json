@@ -13,7 +13,8 @@
     "clash:build": "node gridclash/build/build.mjs",
     "clash:test": "node gridclash/build/sim.mjs && node gridclash/build/build.mjs && node gridclash/build/smoke.mjs",
     "clash:icon": "node gridclash/build/icon.mjs",
-    "clash:apk": "node gridclash/build/build.mjs && bash gridclash/build/apk.sh"
+    "clash:apk": "node gridclash/build/build.mjs && bash gridclash/build/apk.sh",
+    "clash:online": "node gridclash/build/build.mjs && node gridclash/build/online-test.mjs && RELAY_ONLY=1 node gridclash/build/online-test.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

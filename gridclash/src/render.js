@@ -133,7 +133,7 @@ export function createRenderer(canvas) {
   function drawWalls(g) {
     const TS = v.TS;
     for (const wall of g.world.walls) {
-      const col = TEAM[wall.owner];
+      const col = TEAM[wall.team];
       const k = Math.min(1, (g.time - wall.born) / 0.22);
       const s = k < 1 ? Math.max(0.05, easeOutBack(k)) : 1;
       // drop-in: the wall "lands" from slightly above
@@ -307,6 +307,27 @@ export function createRenderer(canvas) {
     ctx.fillStyle = k > 0.5 ? "#5df08a" : k > 0.25 ? "#ffd23f" : "#ff5a5a";
     rr(ctx, bx, by, Math.max(bh, bw * k), bh, bh / 2);
     ctx.fill();
+    // name tag (online / 2v2) and a marker on this phone's own player
+    if (v.tags) {
+      ctx.font = `800 ${Math.round(TS * 0.42)}px system-ui, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "bottom";
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(0,0,0,0.7)";
+      const nm = p.name || "";
+      ctx.strokeText(nm, x, by - TS * 0.05);
+      ctx.fillStyle = p.id === v.local ? "#ffffff" : col.light;
+      ctx.fillText(nm, x, by - TS * 0.05);
+    }
+    if (v.tags && p.id === v.local) {
+      ctx.fillStyle = "#ffd23f";
+      const ty = by - TS * 0.62;
+      ctx.beginPath();
+      ctx.moveTo(x - TS * 0.16, ty - TS * 0.18);
+      ctx.lineTo(x + TS * 0.16, ty - TS * 0.18);
+      ctx.lineTo(x, ty);
+      ctx.fill();
+    }
     // reload ring
     if (p.reloadT > 0) {
       const t = 1 - p.reloadT / gunOf(p).def.reload;
@@ -555,7 +576,7 @@ export function createRenderer(canvas) {
     const target = editPreview(g, p, angle);
     // all of your walls get a faint outline so you can see what's editable
     for (const wall of g.world.walls) {
-      if (wall.owner !== p.team) continue;
+      if (wall.owner !== p.id) continue;
       wall.cells.forEach((c) => {
         if (!c.alive) return;
         ctx.strokeStyle = "rgba(255,210,63,0.25)";
@@ -677,9 +698,7 @@ export function createRenderer(canvas) {
     const cx = W / 2;
 
     if (!L.pvp) {
-      const me = meta.humans[0] ?? 0;
-      const p = g.players[me];
-      const e = enemyOf(g, p);
+      const me = meta.local ?? 0;
       // top bar
       const ty = 20 * u;
       ctx.fillStyle = "rgba(8,12,20,0.72)";
@@ -695,13 +714,33 @@ export function createRenderer(canvas) {
       label(String(g.score[1]), cx + 93 * u, ty, 17 * u);
       label(timerText(g), cx, ty - 4 * u, 14 * u, g.timeLeft <= 10 ? "#ff7a7a" : "#fff");
       label(`ROUND ${g.round} · FIRST TO 3`, cx, ty + 9 * u, 7.5 * u, "rgba(255,255,255,0.6)", "center", 700);
-      // HP bars
+      // HP bars: blue team on the left, red team on the right
       const hw = Math.min(170 * u, cx - 140 * u - 14 * u);
-      label(meta.names[me], 14 * u, 12 * u, 9 * u, TEAM[me].light, "left", 800);
-      hpBar(12 * u, 18 * u, hw, 16 * u, p, "left");
       const ew = Math.min(hw, 104 * u);
-      label(meta.names[1 - me], W - 56 * u, 12 * u, 9 * u, TEAM[1 - me].light, "right", 800);
-      hpBar(W - 54 * u - ew, 18 * u, ew, 16 * u, e, "right");
+      for (const team of [0, 1]) {
+        const list = g.players.filter((q) => q.team === team);
+        const w = team === 0 ? hw : ew;
+        const x = team === 0 ? 12 * u : W - 54 * u - ew;
+        const align = team === 0 ? "left" : "right";
+        if (list.length === 1) {
+          const q = list[0];
+          const nm = q.id === me && !meta.tags ? meta.names[q.id] : q.name || meta.names[q.id];
+          label(nm + (q.id === me && meta.tags ? " (you)" : ""), team === 0 ? 14 * u : W - 56 * u, 12 * u, 9 * u, TEAM[team].light, align, 800);
+          hpBar(x, 18 * u, w, 16 * u, q, align);
+        } else {
+          list.forEach((q, k) => {
+            const y = 3 * u + k * 18 * u;
+            hpBar(x, y + 6 * u, w, 11 * u, q, align);
+            label(q.name + (q.id === me ? " ·you" : ""), team === 0 ? x + 2 * u : x + w - 2 * u, y + 2 * u, 6.5 * u, q.id === me ? "#fff" : TEAM[team].light, align, 800);
+          });
+        }
+      }
+      if (meta.net) {
+        const n = meta.net;
+        const good = n.ping < 120;
+        const txt = `${n.host ? "HOST" : "ONLINE"} · ${n.direct ? "direct" : "relay"}${n.ping ? ` · ${n.ping} ms` : ""}`;
+        label(txt, cx, 44 * u, 7.5 * u, n.ping > 250 ? "#ff8080" : good ? "#6dff9a" : "#ffd23f", "center", 800);
+      }
     } else if (L.portrait) {
       for (const pad of L.pads) {
         inFrame(pad, pad.info.x, pad.info.y, () => {
@@ -757,18 +796,21 @@ export function createRenderer(canvas) {
 
     drawPause();
     // buttons first so a dragged stick knob stays visible on top of them
-    for (const pad of L.pads) drawButtons(g, g.players[pad.team], pad);
-    for (const pad of L.pads) drawSticks(g, g.players[pad.team], input, pad);
+    // on a shared phone pad i is player i; otherwise the one pad is this phone's player
+    const padP = (pad) => g.players[L.pvp ? pad.team : meta.local ?? 0];
+    for (const pad of L.pads) drawButtons(g, padP(pad), pad);
+    for (const pad of L.pads) drawSticks(g, padP(pad), input, pad);
 
     if (!L.pvp) {
-      const me = meta.humans[0] ?? 0;
-      drawBanner(g, me, cx, H * 0.42, 0, 1, W);
+      const me = meta.local ?? 0;
+      drawBanner(g, g.players[me].team, cx, H * 0.42, 0, 1, W);
       const mode = g.players[me].mode;
       if (g.state === "fight" && mode !== "combat") {
+        const by = meta.net ? 52 * u : 40 * u;
         ctx.fillStyle = mode === "edit" ? "rgba(255,210,63,0.9)" : "rgba(90,255,150,0.9)";
-        rr(ctx, cx - 50 * u, 40 * u, 100 * u, 18 * u, 9 * u);
+        rr(ctx, cx - 50 * u, by, 100 * u, 18 * u, 9 * u);
         ctx.fill();
-        label(mode === "edit" ? "EDIT MODE" : "BUILD MODE", cx, 49 * u, 9 * u, "#0b1220", "center", 900);
+        label(mode === "edit" ? "EDIT MODE" : "BUILD MODE", cx, by + 9 * u, 9 * u, "#0b1220", "center", 900);
       }
     } else {
       for (const pad of L.pads) drawBanner(g, pad.team, pad.center.x, pad.center.y, pad.rot, L.portrait ? 0.7 : 0.62, L.portrait ? W : H);
@@ -983,6 +1025,8 @@ export function createRenderer(canvas) {
 
   // meta: { names, humans: [team...] (whose previews to show), }
   function draw(g, input, meta) {
+    v.tags = !!meta.tags;
+    v.local = meta.local ?? 0;
     ctx.setTransform(v.dpr, 0, 0, v.dpr, 0, 0);
     ctx.fillStyle = "#0b0f18";
     ctx.fillRect(0, 0, v.W, v.H);
