@@ -5,6 +5,8 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
+import android.content.res.AssetManager;
+import android.net.Uri;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
@@ -13,9 +15,16 @@ import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.HashMap;
 
 /**
  * Hosts the game: one self-contained HTML file in assets, shown full-screen
@@ -91,6 +100,47 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** Fake https origin the bundled game is served from (never hits the network). */
+    static final String APP_HOST = "appassets.androidplatform.net";
+
+    /**
+     * Serves the bundled assets at https://appassets.androidplatform.net/ instead
+     * of loading them from file://. A real https origin is a secure context, so
+     * online play (WebSockets to the relay, WebRTC direct links) behaves exactly
+     * as it does in a normal browser. Static nested on purpose (see AppBridge).
+     */
+    static class AssetClient extends WebViewClient {
+        private final AssetManager assets;
+
+        AssetClient(AssetManager assets) {
+            this.assets = assets;
+        }
+
+        @Override
+        public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest req) {
+            Uri u = req.getUrl();
+            if (!APP_HOST.equals(u.getHost())) return null; // relay etc.: real network
+            String path = u.getPath();
+            if (path == null || path.equals("/") || path.isEmpty()) path = "/index.html";
+            String mime = path.endsWith(".html") ? "text/html"
+                    : path.endsWith(".js") ? "text/javascript"
+                    : path.endsWith(".png") ? "image/png"
+                    : "application/octet-stream";
+            try {
+                InputStream in = assets.open(path.substring(1));
+                return new WebResourceResponse(mime, "utf-8", in);
+            } catch (IOException e) {
+                return new WebResourceResponse("text/plain", "utf-8", 404, "Not Found",
+                        new HashMap<String, String>(), new ByteArrayInputStream(new byte[0]));
+            }
+        }
+
+        @Override
+        public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
+            return false; // the game never navigates away; keep everything in the app
+        }
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -120,11 +170,11 @@ public class MainActivity extends Activity {
 
         web.addJavascriptInterface(new Store(this), "AndroidStore");
         web.addJavascriptInterface(new AppBridge(this), "AndroidApp");
-        web.setWebViewClient(new WebViewClient());
+        web.setWebViewClient(new AssetClient(getAssets()));
 
         setContentView(web);
         hideSystemUi();
-        web.loadUrl("file:///android_asset/index.html");
+        web.loadUrl("https://" + APP_HOST + "/index.html");
     }
 
     @SuppressWarnings("deprecation")

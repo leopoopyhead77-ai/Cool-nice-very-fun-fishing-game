@@ -6,7 +6,7 @@ import { createInput } from "./input.js";
 import { createRenderer } from "./render.js";
 import { unlockAudio, playEvents, uiClick, audio } from "./audio.js";
 import { load, save } from "./storage.js";
-import { createHost, joinRoom, normalizeCode, encodeWalls, MODES, PIN_LENGTH } from "./net.js";
+import { createHost, joinRoom, normalizeCode, encodeWalls, MODES, PIN_LENGTH, testRelays } from "./net.js";
 
 // One codebase, two apps (chosen at build time by build/build.mjs):
 //   "local"  – Grid Clash: 2 players on one phone, and vs bot
@@ -109,7 +109,8 @@ app.innerHTML = `
         <button class="btn red" id="netJoin">Join with PIN</button>
       </div>
       <p id="netStatus" class="status"></p>
-      <div class="row foot"><button class="btn ghost small" id="netBack">‹ Back</button><span class="tag small-note">Empty seats are filled by bots.</span></div>
+      <div id="netTest" class="net-test hidden"></div>
+      <div class="row foot"><button class="btn ghost small" id="netBack">‹ Back</button><button class="btn ghost small" id="netTestBtn">📶 Test connection</button><span class="tag small-note">Empty seats are filled by bots.</span></div>
     </div>
   </section>
 
@@ -593,6 +594,21 @@ $("netMode").addEventListener("click", (e) => {
 $("netBack").addEventListener("click", () => {
   click();
   toMenu();
+});
+$("netTestBtn").addEventListener("click", async () => {
+  click();
+  const box = $("netTest");
+  box.classList.remove("hidden");
+  $("netTestBtn").disabled = true;
+  const draw = (rs) => {
+    box.innerHTML = rs.map((r) => `<div class="nt ${r.state}"><span>${r.state === "ok" ? "✓" : r.state === "fail" ? "✗" : "…"}</span><b>${r.name}</b><em>${r.state === "ok" ? r.ms + " ms" : r.state === "fail" ? escapeHtml(r.err) : "testing"}</em></div>`).join("")
+      + `<div class="nt-online">${navigator.onLine === false ? "This phone says it is offline." : ""}</div>`;
+  };
+  const rs = await testRelays(draw);
+  draw(rs);
+  const ok = rs.filter((r) => r.state === "ok").length;
+  setNetStatus(ok ? `${ok} of ${rs.length} relays reachable — online play should work.` : "No relay reachable from this phone/network. Try switching Wi-Fi ↔ mobile data.", !ok);
+  $("netTestBtn").disabled = false;
 });
 $("netCode").addEventListener("input", (e) => {
   e.target.value = normalizeCode(e.target.value);

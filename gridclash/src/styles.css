@@ -198,3 +198,14 @@ body.is-online .online-only { display: block; }
 .mode-note { margin: -4px 0 0; font-size: 12px; }
 #netMode button { font-size: 12px; padding: 8px 4px; }
 .inp.code { letter-spacing: 0.3em; }
+
+/* ---- connection test ---- */
+.net-test { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.net-test .nt { display: flex; gap: 8px; align-items: baseline; padding: 6px 10px; border-radius: 8px; background: rgba(255, 255, 255, 0.05); }
+.net-test .nt span { width: 14px; font-weight: 900; }
+.net-test .nt b { min-width: 74px; }
+.net-test .nt em { font-style: normal; color: var(--muted); }
+.net-test .nt.ok span, .net-test .nt.ok em { color: #6dff9a; }
+.net-test .nt.fail span, .net-test .nt.fail em { color: #ff8080; }
+.nt-online { color: #ff8080; font-size: 12px; }
+#netStatus { white-space: normal; }

@@ -65,6 +65,19 @@ async function openOnline(page, name) {
   await page.fill("#netName", name);
 }
 
+// ---------------------------------------------------------------- connection test button
+{
+  const t = await phone("nettest");
+  await t.click("#online");
+  await t.click("#netTestBtn");
+  const done = await waitFor(t, () => document.querySelectorAll("#netTest .nt.testing").length === 0 && document.querySelectorAll("#netTest .nt").length === 3, null, 30000);
+  const rows = await t.$$eval("#netTest .nt", (els) => els.map((e) => e.textContent.trim().replace(/\s+/g, " ")));
+  console.log("     " + rows.join(" | "));
+  check(done && rows.some((r) => r.startsWith("✓")), "Test connection reports at least one reachable relay");
+  await t.screenshot({ path: resolve(shots, "23-online-test-connection.png") });
+  await t.context().close();
+}
+
 // ---------------------------------------------------------------- 1v1
 const host = await phone("host");
 const gst = await phone("guest");

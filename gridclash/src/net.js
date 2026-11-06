@@ -21,10 +21,11 @@ import { GUNS } from "./guns.js";
 import { clearWalls } from "./world.js";
 
 export const BROKERS = [
-  { url: "wss://public.cloud.shiftr.io", username: "public", password: "public" },
-  { url: "wss://broker.emqx.io:8084/mqtt" },
-  { url: "wss://broker.hivemq.com:8884/mqtt" },
+  { name: "shiftr.io", url: "wss://public.cloud.shiftr.io", username: "public", password: "public" },
+  { name: "EMQX", url: "wss://broker.emqx.io:8084/mqtt" },
+  { name: "HiveMQ", url: "wss://broker.hivemq.com:8884/mqtt" },
 ];
+const CONNECT_TIMEOUT = 15000;
 const ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const ROOT = "gridclash/v3/";
 
@@ -52,7 +53,60 @@ export function brokerForCode(code) {
 
 async function connectBroker(index, clientId) {
   const b = BROKERS[index];
-  return mqttConnect(b.url, clientId, { username: b.username, password: b.password, timeout: 12000, keepalive: 20 });
+  return mqttConnect(b.url, clientId, { username: b.username, password: b.password, timeout: CONNECT_TIMEOUT, keepalive: 20 });
+}
+
+const describe = (e) => {
+  const m = String((e && e.message) || e || "error");
+  return m === "timeout" ? "no answer (timed out)" : m === "socket error" || m === "closed" ? "blocked or unreachable" : m;
+};
+
+// Try every relay at once and keep the first that answers (the rest are
+// closed). Rejects with a per-relay report if none do.
+function connectFirst(clientId) {
+  return new Promise((resolve, reject) => {
+    const errs = BROKERS.map(() => null);
+    let won = false;
+    let failed = 0;
+    BROKERS.forEach((_, i) => {
+      connectBroker(i, clientId + i)
+        .then((client) => {
+          if (won) {
+            client.close();
+            return;
+          }
+          won = true;
+          resolve({ client, index: i });
+        })
+        .catch((e) => {
+          errs[i] = describe(e);
+          if (++failed === BROKERS.length && !won) {
+            const report = BROKERS.map((b, k) => `${b.name}: ${errs[k]}`).join(" · ");
+            reject(new Error(`Couldn't reach any relay — ${report}. Check the phone has internet (try switching between Wi-Fi and mobile data) and try again.`));
+          }
+        });
+    });
+  });
+}
+
+// For the "Test connection" button: how each relay answers from this phone.
+export async function testRelays(onUpdate) {
+  const results = BROKERS.map((b) => ({ name: b.name, state: "testing", ms: 0, err: "" }));
+  onUpdate?.(results);
+  await Promise.all(BROKERS.map(async (b, i) => {
+    const t0 = performance.now();
+    try {
+      const c = await connectBroker(i, "t" + rid(8));
+      results[i].state = "ok";
+      results[i].ms = Math.round(performance.now() - t0);
+      c.close();
+    } catch (e) {
+      results[i].state = "fail";
+      results[i].err = describe(e);
+    }
+    onUpdate?.(results);
+  }));
+  return results;
 }
 
 // ---- snapshots ------------------------------------------------------------------
@@ -190,19 +244,8 @@ export async function createHost(opts) {
   const mode = MODES[opts.mode] ? opts.mode : "1v1";
   const { size, teams } = MODES[mode];
   const cid = "h" + rid(8);
-  let client = null;
-  let brokerIndex = 0;
-  let lastErr = null;
-  for (let i = 0; i < BROKERS.length && !client; i++) {
-    opts.onStatus?.(`Connecting to relay ${i + 1}/${BROKERS.length}…`);
-    try {
-      client = await connectBroker(i, cid);
-      brokerIndex = i;
-    } catch (e) {
-      lastErr = e;
-    }
-  }
-  if (!client) throw new Error("Couldn't reach any relay (" + (lastErr && lastErr.message) + ")");
+  opts.onStatus?.("Connecting to the relays…");
+  const { client, index: brokerIndex } = await connectFirst(cid);
 
   // first digit picks the broker
   let first;
@@ -382,7 +425,13 @@ export async function joinRoom(opts) {
   if (code.length !== PIN_LENGTH) throw new Error(`Room PINs are ${PIN_LENGTH} digits`);
   const cid = "g" + rid(8);
   opts.onStatus?.("Connecting to relay…");
-  const client = await connectBroker(brokerForCode(code), cid);
+  const bi = brokerForCode(code);
+  let client;
+  try {
+    client = await connectBroker(bi, cid);
+  } catch (e) {
+    throw new Error(`can't reach the room's relay (${BROKERS[bi].name}: ${describe(e)}). Check the phone has internet and try again.`);
+  }
   const base = ROOT + code;
   let pc = null;
   let dc = null;
