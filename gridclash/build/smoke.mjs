@@ -22,6 +22,10 @@ page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
 await page.goto("file://" + resolve(root, "dist/index.html"));
 await page.waitForTimeout(600);
 await page.screenshot({ path: resolve(shots, "1-menu.png") });
+let failuresEarly = 0;
+const btns = await page.locator("#buildStyle button").count();
+if (btns !== 2) failuresEarly++;
+console.log(`${btns === 2 ? "ok  " : "FAIL"} menu offers Build: Stick / Classic`);
 
 let failures = 0;
 const check = (ok, msg) => {
@@ -183,6 +187,55 @@ check((await G("g.world.walls.filter((w) => w.edit >= 0).length")) === 1, "drag 
 await tap(7, P.slot1.x, P.slot1.y);
 await stepN(1);
 check((await G("g.players[0].slot")) === 1, "weapon slot 2 switches gun");
+
+// build reach: one tile shorter (max 3.75 tiles)
+await page.evaluate(() => { const p = window.__clash.game.players[0]; p.x = 4.5; p.y = 6.5; p.facing = 0; });
+await stepN(1);
+await touch("pointerdown", 3, P.build.x, P.build.y);
+await touch("pointermove", 3, P.build.x + 200, P.build.y);
+await stepN(1);
+await touch("pointerup", 3, P.build.x + 200, P.build.y);
+await stepN(2);
+const far = await G("g.world.walls.at(-1).cells[1].x + 0.5 - g.players[0].x");
+check(far <= 4.1, `full-length drag lands about 3.75 tiles away (${far.toFixed(2)})`);
+
+// Classic (OG) build controls, picked on the menu
+await page.evaluate(() => { window.__clash.settings.buildStyle = "classic"; });
+await page.evaluate(() => {
+  const g = window.__clash.game;
+  const p = g.players[0];
+  p.x = 3.5; p.y = 13.5; p.vx = p.vy = 0; p.facing = 0; p.mats = 300; p.mode = "combat";
+});
+await stepN(1);
+await tap(3, P.build.x, P.build.y);
+await stepN(1);
+check((await G("g.players[0].mode")) === "build", "Classic: BUILD switches to build mode");
+const cw0 = await G("g.world.walls.length");
+await touch("pointerdown", 2, P.aim.x, P.aim.y);
+await touch("pointermove", 2, P.aim.x + 30, P.aim.y);
+await stepN(2);
+await unfreeze();
+await page.waitForTimeout(120);
+await page.screenshot({ path: resolve(shots, "6b-classic-build.png") });
+await freeze();
+await touch("pointerup", 2, P.aim.x + 30, P.aim.y);
+await stepN(2);
+check((await G("g.world.walls.length")) === cw0 + 1, "Classic: the aim stick places the wall in build mode");
+await tap(7, P.slot0.x, P.slot0.y);
+await stepN(1);
+check((await G("g.players[0].mode")) === "edit", "Classic: the EDIT slot enters edit mode");
+await touch("pointerdown", 2, P.aim.x, P.aim.y);
+await touch("pointermove", 2, P.aim.x + 40, P.aim.y);
+await touch("pointerup", 2, P.aim.x + 40, P.aim.y);
+await stepN(2);
+check((await G("g.world.walls.at(-1).edit")) >= 0, "Classic: releasing on your wall cuts a tile");
+await tap(7, P.slot1.x, P.slot1.y);
+await stepN(2);
+check((await G("g.world.walls.at(-1).edit")) === -1, "Classic: RESET restores it");
+await tap(3, P.build.x, P.build.y);
+await stepN(1);
+check((await G("g.players[0].mode")) === "combat", "Classic: BUILD again goes back to shooting");
+await page.evaluate(() => { window.__clash.settings.buildStyle = "stick"; });
 await unfreeze();
 await page.waitForTimeout(300);
 await page.screenshot({ path: resolve(shots, "6-fight.png") });
@@ -253,6 +306,7 @@ await page.screenshot({ path: resolve(shots, "11-pvp-fight.png") });
 
 check(errors.length === 0, `no page errors${errors.length ? ": " + errors.slice(0, 3).join(" | ") : ""}`);
 await browser.close();
+failures += failuresEarly;
 if (failures) {
   console.log(`\n${failures} check(s) failed`);
   process.exit(1);

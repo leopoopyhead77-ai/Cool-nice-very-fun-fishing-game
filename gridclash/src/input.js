@@ -251,9 +251,10 @@ export function createInput(canvas, hooks) {
     if (inCircle(L.pause, x, y)) return { team: 0, btn: "pause" };
     for (const pad of L.pads) {
       const mode = hooks.mode(pad.team);
+      const classic = hooks.buildStyle?.() === "classic";
       if (inCircle(pad.build, x, y)) return { team: pad.team, btn: "build" };
-      if (inCircle(pad.edit, x, y, 4)) return { team: pad.team, btn: "qedit" };
-      if (inCircle(pad.reset, x, y, 4)) return { team: pad.team, btn: "reset" };
+      if (!classic && inCircle(pad.edit, x, y, 4)) return { team: pad.team, btn: "qedit" };
+      if (!classic && inCircle(pad.reset, x, y, 4)) return { team: pad.team, btn: "reset" };
       if (inRect(pad.slot0, x, y)) return { team: pad.team, btn: mode === "combat" ? "slot0" : "edit" };
       if (inRect(pad.slot1, x, y)) return { team: pad.team, btn: mode === "combat" ? "slot1" : "reset" };
     }
@@ -268,8 +269,9 @@ export function createInput(canvas, hooks) {
         hooks.onPause?.();
         break;
       case "build":
-        // keyboard / legacy: a quick wall in front
-        out.push({ t: "qbuild", tap: true });
+        // classic: BUILD toggles the aim stick between shooting and building
+        if (hooks.buildStyle?.() === "classic") out.push({ t: "mode", mode: mode === "combat" ? "build" : "combat" });
+        else out.push({ t: "qbuild", tap: true });
         break;
       case "qedit":
         out.push({ t: "qedit", tap: true });
@@ -333,7 +335,8 @@ export function createInput(canvas, hooks) {
     if (hit) {
       st.pressed = { id: ev.pointerId, ...hit };
       // BUILD and EDIT act like mini sticks: tap = quick, drag = aimed
-      if ((hit.btn === "build" || hit.btn === "qedit") && !st.ps[hit.team].btn) {
+      const stickStyle = hooks.buildStyle?.() !== "classic";
+      if (stickStyle && (hit.btn === "build" || hit.btn === "qedit") && !st.ps[hit.team].btn) {
         const pad = st.L.pads.find((p) => p.team === hit.team);
         const b = hit.btn === "build" ? pad.build : pad.edit;
         try {

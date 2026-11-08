@@ -41,9 +41,10 @@ app is signed with its own key rather than coming from the Play Store.
 |---|---|
 | **Left stick** | Move. Push where you want to go. |
 | **Right stick** | Drag to aim (a transparent line shows the shot's path), **release to shoot**. Quick tap = auto-aim; drag back to centre = cancel. It always shoots: there's no mode switching. |
-| **BUILD** (above the right stick) | **Tap**: a 3-tile wall drops right in front of you. **Drag from the button**: a ghost of the wall follows your thumb; release to place it, or drag back onto the button to cancel. If the exact spot is blocked (rock, wall, someone standing there), it slides to the nearest spot that fits. The ring round the button shows your materials. |
-| **EDIT** (next to BUILD) | **Tap**: cut a gap (a window or door) in your wall in front of you, or restore it if it's already open. **Drag**: pick which wall tile. One gap per wall at a time. |
-| **↺** | Restore your nearest edited wall. |
+| **Building style** | Pick on the main menu: **Build: Stick** (new) or **Classic** (OG). Both apps, saved on the phone. Walls are 3 tiles, cost 30 mats, and land from 1.35 to 3.75 tiles away. If the exact spot is blocked, the wall slides to the nearest spot that fits. |
+| **Stick: BUILD** | Its own joystick above the aim stick. **Tap** it: a wall drops in front of you. **Drag** it: a **build crosshair** and a ghost wall show where it lands; release to build, or drag back onto it to cancel. The ring around it shows your materials. Your aim stick always shoots. |
+| **Stick: EDIT / ↺** | **Tap EDIT**: cut a gap in (or restore) your wall in front of you. **Drag from EDIT**: pick which wall tile. **↺** restores your nearest edited wall. |
+| **Classic: BUILD** | Switches the aim stick into a build stick: drag to move the preview, release to drop the wall. Tap again (now FIGHT) to go back to shooting. In build mode the weapon buttons become **EDIT** (aim at your wall, release to cut or restore a tile; one gap per wall) and **RESET**. |
 | **Weapon slots** (top right) | Tap to switch guns, tap the active one to reload. |
 
 Keyboard and mouse (player 1): WASD move · mouse aim + release · B build · E edit · F restore · R reload · 1/2 weapons · Esc pause.

@@ -695,6 +695,31 @@ export function createRenderer(canvas) {
     ctx.lineWidth = Math.max(1.5, TS * 0.08);
     ctx.strokeRect(gx + 1, gy + 1, gw - 2, gh - 2);
     if (!afford) label("need 30 ▰", gx + gw / 2, gy - TS * 0.45, TS * 0.5, "#ff9090", "center", 900);
+    if (dragging) {
+      // the build stick's crosshair, on the middle of the wall it will drop
+      const [mx2, my2] = place.cells[1];
+      const cx = sx(mx2 + 0.5);
+      const cy = sy(my2 + 0.5) - lift;
+      const r = TS * 0.62;
+      const col = ok ? "#a0ffc8" : "#ff8080";
+      ctx.strokeStyle = col;
+      ctx.lineWidth = Math.max(1.5, TS * 0.08);
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.55, 0, Math.PI * 2);
+      ctx.moveTo(cx - r, cy);
+      ctx.lineTo(cx - r * 0.25, cy);
+      ctx.moveTo(cx + r * 0.25, cy);
+      ctx.lineTo(cx + r, cy);
+      ctx.moveTo(cx, cy - r);
+      ctx.lineTo(cx, cy - r * 0.25);
+      ctx.moveTo(cx, cy + r * 0.25);
+      ctx.lineTo(cx, cy + r);
+      ctx.stroke();
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.arc(cx, cy, Math.max(1.5, TS * 0.07), 0, Math.PI * 2);
+      ctx.fill();
+    }
     // tether from builder to the drop point
     const [mx, my] = place.cells[1];
     ctx.setLineDash([TS * 0.15, TS * 0.15]);
@@ -1229,6 +1254,10 @@ export function createRenderer(canvas) {
   }
 
   function drawButtons(g, p, pad, input) {
+    if (v.buildStyle === "classic") {
+      drawButtonsClassic(g, p, pad);
+      return;
+    }
     const u = v.L.u;
     const B = pad.build;
     const mode = p.mode;
@@ -1261,6 +1290,14 @@ export function createRenderer(canvas) {
     // BUILD: tap = wall in front of you, drag = aim it
     const afford = p.mats >= WALL_COST;
     const building = drag && drag.kind === "build";
+    // the build stick's base ring (the knob is the button itself)
+    ctx.fillStyle = "rgba(90,255,150,0.06)";
+    ctx.strokeStyle = "rgba(90,255,150,0.35)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(B.x, B.y, B.r * 1.45, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
     inFrame(pad, B.x, B.y, () => {
       ctx.fillStyle = building ? "#5aff96" : "rgba(8,12,20,0.78)";
       ctx.beginPath();
@@ -1348,11 +1385,113 @@ export function createRenderer(canvas) {
     }
   }
 
+  // Classic (OG) build controls: BUILD toggles the aim stick into a build
+  // stick; in build mode the weapon slots become EDIT / RESET.
+  function drawButtonsClassic(g, p, pad) {
+    const u = v.L.u;
+    const B = pad.build;
+    const mode = p.mode;
+    // BUILD toggle (sits over the attack stick, from its player's point of view)
+    const on = mode !== "combat";
+    inFrame(pad, B.x, B.y, () => {
+      ctx.fillStyle = on ? "#5aff96" : "rgba(8,12,20,0.75)";
+      ctx.beginPath();
+      ctx.arc(0, 0, B.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = on ? "#c8ffdd" : "rgba(90,255,150,0.7)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      if (on) drawModeIcon(0, -B.r * 0.12, B.r * 0.42, "combat", "#0b1220");
+      else brick(0, -B.r * 0.12, B.r * 0.4, "#5aff96");
+      label(on ? "FIGHT" : "BUILD", 0, B.r * 0.55, Math.min(8 * u, B.r * 0.28), on ? "#0b1220" : "#5aff96", "center", 900);
+      // materials beside it
+      const mats = Math.floor(p.mats);
+      const mx = -B.r - 10 * u;
+      label(`▰ ${mats}`, mx, -5 * u, 11 * u, mats >= WALL_COST ? "#cfe9ff" : "#ff8080", "right", 900);
+      label(`wall ${WALL_COST}`, mx, 9 * u, 7.5 * u, "rgba(255,255,255,0.5)", "right", 700);
+      ctx.fillStyle = "rgba(255,255,255,0.15)";
+      ctx.fillRect(mx - 40 * u, 17 * u, 40 * u, 3 * u);
+      ctx.fillStyle = "#cfe9ff";
+      ctx.fillRect(mx - 40 * u, 17 * u, 40 * u * (p.mats / MAX_MATS), 3 * u);
+    });
+
+    const slots = [pad.slot0, pad.slot1];
+    // r is the slot rect in the pad's own frame, centred on the origin
+    const frameRect = (s) => ({ x: -s.lw / 2, y: -s.lh / 2, w: s.lw, h: s.lh });
+    if (mode === "combat") {
+      p.guns.forEach((gun, i) => inFrame(pad, slots[i].cx, slots[i].cy, () => {
+        const r = frameRect(slots[i]);
+        const active = i === p.slot;
+        const tier = TIER_COLOR[gun.def.tier];
+        const s = r.h / 34; // text scale relative to the solo-mode slot
+        ctx.fillStyle = active ? "rgba(20,28,44,0.92)" : "rgba(8,12,20,0.6)";
+        rr(ctx, r.x, r.y, r.w, r.h, 8 * u * s);
+        ctx.fill();
+        ctx.strokeStyle = active ? tier : "rgba(255,255,255,0.15)";
+        ctx.lineWidth = active ? 2.5 : 1;
+        ctx.stroke();
+        ctx.save();
+        ctx.translate(r.x + 4 * u * s, r.y + r.h / 2 + 1 * u * s);
+        drawGun(ctx, gun.def.id, 22 * u * s);
+        ctx.restore();
+        const name = gun.def.name.toUpperCase();
+        const tx = r.x + 28 * u * s;
+        ctx.font = `800 ${Math.round(8.5 * u * s)}px system-ui, sans-serif`;
+        const fit = Math.min(1, (r.w - 34 * u * s) / ctx.measureText(name).width);
+        label(name, tx, r.y + r.h * 0.34, 8.5 * u * s * fit, active ? "#fff" : "rgba(255,255,255,0.65)", "left", 800);
+        const reloading = active && p.reloadT > 0;
+        const txt = reloading ? "RELOADING…" : `${gun.ammo} / ${magOf(p, gun)}`;
+        label(txt, tx, r.y + r.h * 0.7, 9.5 * u * s, gun.ammo === 0 || reloading ? "#ffb36b" : tier, "left", 800);
+        if (reloading) {
+          const k = 1 - p.reloadT / (gun.def.reload * (p.buffs ? p.buffs.reload : 1));
+          ctx.fillStyle = "#ffb36b";
+          ctx.fillRect(r.x + 6 * u, r.y + r.h - 4 * u * s, (r.w - 12 * u) * k, 2 * u);
+        } else if (active && p.cd > 0) {
+          const k = p.cd / (gun.def.cd + (gun.def.burst - 1) * gun.def.gap);
+          ctx.fillStyle = "rgba(255,255,255,0.35)";
+          ctx.fillRect(r.x + 6 * u, r.y + r.h - 4 * u * s, (r.w - 12 * u) * k, 2 * u);
+        }
+      }));
+    } else {
+      // EDIT toggle
+      inFrame(pad, slots[0].cx, slots[0].cy, () => {
+        const r = frameRect(slots[0]);
+        const s = r.h / 34;
+        const editing = mode === "edit";
+        ctx.fillStyle = editing ? "#ffd23f" : "rgba(8,12,20,0.75)";
+        rr(ctx, r.x, r.y, r.w, r.h, 8 * u * s);
+        ctx.fill();
+        ctx.strokeStyle = "#ffd23f";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        drawModeIcon(r.x + 18 * u * s, 0, 7 * u * s, "edit", editing ? "#0b1220" : "#ffd23f");
+        label(editing ? "EDITING" : "EDIT", r.x + 32 * u * s, r.y + r.h * 0.38, 10 * u * s, editing ? "#0b1220" : "#ffd23f", "left", 900);
+        label(editing ? "tap: back to build" : "cut / restore a tile", r.x + 32 * u * s, r.y + r.h * 0.72, 7 * u * s, editing ? "rgba(11,18,32,0.75)" : "rgba(255,255,255,0.6)", "left", 700);
+      });
+      // RESET
+      inFrame(pad, slots[1].cx, slots[1].cy, () => {
+        const r = frameRect(slots[1]);
+        const s = r.h / 34;
+        const any = !!nearestEditedWall(g, p);
+        ctx.fillStyle = "rgba(8,12,20,0.75)";
+        rr(ctx, r.x, r.y, r.w, r.h, 8 * u * s);
+        ctx.fill();
+        ctx.strokeStyle = any ? "#8fd3ff" : "rgba(255,255,255,0.15)";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        label("↺", r.x + 18 * u * s, 0, 16 * u * s, any ? "#8fd3ff" : "rgba(255,255,255,0.3)", "center", 900);
+        label("RESET", r.x + 32 * u * s, r.y + r.h * 0.38, 10 * u * s, any ? "#8fd3ff" : "rgba(255,255,255,0.35)", "left", 900);
+        label("restore nearest edit", r.x + 32 * u * s, r.y + r.h * 0.72, 7 * u * s, "rgba(255,255,255,0.5)", "left", 700);
+      });
+    }
+  }
+
   // ---- frame -----------------------------------------------------------------------
 
   // meta: { names, humans: [team...] (whose previews to show), }
   function draw(g, input, meta) {
     v.tags = !!meta.tags;
+    v.buildStyle = meta.buildStyle || "stick";
     v.local = meta.local ?? 0;
     ctx.setTransform(v.dpr, 0, 0, v.dpr, 0, 0);
     ctx.fillStyle = "#0b0f18";

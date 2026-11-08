@@ -35,7 +35,11 @@ const settings = {
   muted: load("muted", false),
   netName: load("netName", ""),
   netMode: load("netMode", "1v1"),
+  // "stick": BUILD is its own joystick with a crosshair (tap = quick wall)
+  // "classic": the original — BUILD switches the aim stick into a build stick
+  buildStyle: load("buildStyle", "stick"),
 };
+if (!["stick", "classic"].includes(settings.buildStyle)) settings.buildStyle = "stick";
 if (!MODES[settings.netMode]) settings.netMode = "1v1";
 const validLoadout = (l) => Array.isArray(l) && l.length === 2 && l.every((id) => GUN_BY_ID[id]);
 if (!validLoadout(settings.loadout)) settings.loadout = ["ar", "shotgun"];
@@ -62,6 +66,13 @@ app.innerHTML = `
         <span class="lbl">${IS_ONLINE_APP ? "Bots" : "Bot"}</span>
         <div class="seg" id="diff">
           ${DIFFS.map((d) => `<button data-d="${d}">${d}</button>`).join("")}
+        </div>
+      </div>
+      <div class="row">
+        <span class="lbl">Build</span>
+        <div class="seg" id="buildStyle">
+          <button data-b="stick">Stick <small>+ crosshair</small></button>
+          <button data-b="classic">Classic <small>mode switch</small></button>
         </div>
       </div>
       <div class="row${IS_ONLINE_APP ? "" : " hidden"}">
@@ -144,8 +155,9 @@ app.innerHTML = `
       <ul>
         <li><b>Left stick</b> — move. Push where you want to go.</li>
         <li><b>Right stick</b> — drag to aim; the faint line shows the shot's path. <b>Release to shoot.</b> Quick tap = auto-aim. Drag back to centre to cancel.</li>
-        <li><b>BUILD</b> (above the stick) — the stick becomes a build stick. Drag to move the green preview, release to drop a 3-tile wall (30 mats).</li>
-        <li><b>EDIT</b> — aim at one of your walls and release to cut one tile out (a window/door). Release on the open tile again, or press <b>RESET</b>, to restore it. One edited tile per wall at a time.</li>
+        <li><b>Building</b> — pick your style on the main menu (<b>Build: Stick / Classic</b>). Walls are 3 tiles, cost 30 mats, and land up to ~4 tiles away.</li>
+        <li><b>Stick</b> — BUILD is its own joystick. <b>Tap</b> it: a wall drops right in front of you. <b>Drag</b> it: a crosshair and a ghost wall show where it lands; release to build, drag back to cancel. <b>EDIT</b> works the same way (tap = wall in front, drag = pick a tile); <b>↺</b> restores. Your aim stick always shoots.</li>
+        <li><b>Classic</b> — BUILD switches your aim stick into a build stick (drag, release to place); tap it again (FIGHT) to shoot. In build mode the weapon buttons become <b>EDIT</b> (aim at your wall, release to cut / restore a tile) and <b>RESET</b>.</li>
         <li><b>Weapon slots</b> — tap to switch, tap the active one to reload.</li>
         <li>Medkits spawn at the top and bottom middle. First to 3 rounds wins.</li>
         ${IS_ONLINE_APP
@@ -192,6 +204,7 @@ function show(name) {
 // ---- menu ---------------------------------------------------------------------
 
 function refreshMenu() {
+  $("buildStyle").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.b === settings.buildStyle));
   $("diff").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.d === settings.difficulty));
   $("openLoadout").innerHTML = settings.loadout
     .map((id) => `<span style="--c:${TIER_COLOR[GUN_BY_ID[id].tier]}">${GUN_BY_ID[id].name}</span>`)
@@ -204,6 +217,14 @@ $("diff").addEventListener("click", (e) => {
   if (!d) return;
   settings.difficulty = d;
   save("difficulty", d);
+  click();
+  refreshMenu();
+});
+$("buildStyle").addEventListener("click", (e) => {
+  const b = e.target.closest("button")?.dataset.b;
+  if (!b) return;
+  settings.buildStyle = b;
+  save("buildStyle", b);
   click();
   refreshMenu();
 });
@@ -514,6 +535,7 @@ const input = createInput(canvas, {
   onPause: pause,
   onFirstTouch: unlockAudio,
   cardPhase: () => !!game && game.state === "cards" && !online(),
+  buildStyle: () => settings.buildStyle,
 });
 
 function click() {
@@ -613,6 +635,7 @@ function frame(now) {
     humans: matchMode === "pvp" ? [0, 1] : [local],
     local,
     tags: game.players.length > 2 || online(),
+    buildStyle: settings.buildStyle,
     net: online() ? netInfo() : null,
   });
 }

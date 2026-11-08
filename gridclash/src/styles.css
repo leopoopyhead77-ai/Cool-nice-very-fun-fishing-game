@@ -251,3 +251,6 @@ body.is-online .online-only { display: block; }
 .sel-back { position: fixed; left: max(8px, env(safe-area-inset-left)); bottom: 8px; z-index: 6; background: rgba(8,12,20,0.85); }
 .sel-wrap.two ~ .sel-back { bottom: auto; top: 50%; transform: translateY(-50%); }
 .gun-top .gicon { width: 44px; height: 19px; object-fit: contain; }
+
+#buildStyle button { display: flex; flex-direction: column; align-items: center; line-height: 1.1; text-transform: none; }
+#buildStyle button small { font-size: 9px; font-weight: 700; opacity: 0.75; }

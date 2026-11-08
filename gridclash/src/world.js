@@ -175,7 +175,8 @@ export function collideCircle(w, e) {
 // cells in a line, perpendicular to the dominant axis of the aim, so it stands
 // between the builder and whatever they are aiming at.
 export function wallPlacement(w, players, x, y, angle, mag) {
-  const dist = 1.35 + Math.max(0, Math.min(1, mag)) * 3.4;
+  // reach: 1.35 tiles in front (a tap) out to 3.75 tiles at full drag
+  const dist = 1.35 + Math.max(0, Math.min(1, mag)) * 2.4;
   const dx = Math.cos(angle);
   const dy = Math.sin(angle);
   const vertical = Math.abs(dx) >= Math.abs(dy);
