@@ -5,6 +5,7 @@ import { gunOf, enemyOf, traceShot, buildPreview, editPreview, quickEditTarget, 
 import { drawGun, drawCardIcon, GUN_LEN } from "./art.js";
 import { CARD_BY_ID, RARITIES } from "./cards.js";
 import { cardRects } from "./input.js";
+import { PAC_R, TRAIN_LEN } from "./hazards.js";
 import { TIER_COLOR } from "./guns.js";
 
 export const TEAM = [
@@ -59,18 +60,63 @@ export function createRenderer(canvas) {
 
   function buildFloor(world, numTeams = 2) {
     v.floorTeams = numTeams;
+    const theme = (world.map && world.map.theme) || "arena";
+    v.floorTheme = theme;
     const c = document.createElement("canvas");
     const TS = v.TS * v.dpr;
     c.width = Math.ceil(GW * TS);
     c.height = Math.ceil(GH * TS);
     const f = c.getContext("2d");
-    f.fillStyle = "#1b2232";
+    const hash = (x, y) => ((x * 73856093) ^ (y * 19349663)) >>> 0;
+    const base = theme === "pac" ? ["#05070f", "#070a16"] : theme === "desert" ? ["#7a6240", "#806745"] : ["#1b2232", "#1e2638"];
+    f.fillStyle = base[0];
     f.fillRect(0, 0, c.width, c.height);
     for (let y = 0; y < GH; y++) {
       for (let x = 0; x < GW; x++) {
         if ((x + y) % 2 === 0) {
-          f.fillStyle = "#1e2638";
+          f.fillStyle = base[1];
           f.fillRect(x * TS, y * TS, TS, TS);
+        }
+      }
+    }
+    if (theme === "desert") {
+      // sand speckles and dune ripples
+      for (let y = 0; y < GH; y++) {
+        for (let x = 0; x < GW; x++) {
+          const h = hash(x, y);
+          f.fillStyle = h % 2 ? "rgba(255,230,180,0.08)" : "rgba(60,40,20,0.12)";
+          f.fillRect((x + (h % 7) / 8) * TS, (y + ((h >> 3) % 7) / 8) * TS, TS * 0.08, TS * 0.08);
+          if (h % 11 === 0) {
+            f.strokeStyle = "rgba(255,225,170,0.12)";
+            f.lineWidth = Math.max(1, TS * 0.05);
+            f.beginPath();
+            f.arc((x + 0.5) * TS, (y + 1) * TS, TS * 0.7, Math.PI * 1.15, Math.PI * 1.85);
+            f.stroke();
+          }
+        }
+      }
+      // the railway: ballast, sleepers, rails
+      const tx = world.map.track.x;
+      f.fillStyle = "#5b4a38";
+      f.fillRect((tx - 1.05) * TS, 0, 2.1 * TS, c.height);
+      f.fillStyle = "#3e2a18";
+      for (let y = 0.2; y < GH; y += 0.55) f.fillRect((tx - 0.95) * TS, y * TS, 1.9 * TS, 0.2 * TS);
+      for (const rx of [tx - 0.62, tx + 0.62]) {
+        f.fillStyle = "rgba(0,0,0,0.35)";
+        f.fillRect((rx - 0.05) * TS, 0, 0.14 * TS, c.height);
+        f.fillStyle = "#c3c9d3";
+        f.fillRect((rx - 0.07) * TS, 0, 0.11 * TS, c.height);
+      }
+    }
+    if (theme === "pac") {
+      // pellets in the corridors
+      f.fillStyle = "rgba(255,214,170,0.55)";
+      for (let y = 0; y < GH; y++) {
+        for (let x = 0; x < GW; x++) {
+          if (isRock(world, x, y) || (y === 10 && x > 12 && x < 17)) continue;
+          f.beginPath();
+          f.arc((x + 0.5) * TS, (y + 0.5) * TS, TS * 0.06, 0, Math.PI * 2);
+          f.fill();
         }
       }
     }
@@ -101,6 +147,7 @@ export function createRenderer(canvas) {
     }
     f.stroke();
     // centre line
+    if (theme === "arena") {
     f.setLineDash([TS * 0.4, TS * 0.4]);
     f.strokeStyle = "rgba(220,230,255,0.13)";
     f.lineWidth = TS * 0.08;
@@ -109,12 +156,67 @@ export function createRenderer(canvas) {
     f.lineTo(c.width / 2, c.height);
     f.stroke();
     f.setLineDash([]);
+    }
     // rock
     for (let y = 0; y < GH; y++) {
       for (let x = 0; x < GW; x++) {
         if (!isRock(world, x, y)) continue;
         const px = x * TS;
         const py = y * TS;
+        if (theme === "pac") {
+          // neon maze walls: glowing outline on the outer edges of each block
+          f.fillStyle = "#0a1038";
+          f.fillRect(px, py, TS, TS);
+          f.save();
+          f.strokeStyle = "#3d5bff";
+          f.shadowColor = "#3d5bff";
+          f.shadowBlur = TS * 0.35;
+          f.lineWidth = Math.max(1.5, TS * 0.09);
+          f.beginPath();
+          const e = TS * 0.12;
+          if (!isRock(world, x, y - 1)) { f.moveTo(px, py + e); f.lineTo(px + TS, py + e); }
+          if (!isRock(world, x, y + 1)) { f.moveTo(px, py + TS - e); f.lineTo(px + TS, py + TS - e); }
+          if (!isRock(world, x - 1, y)) { f.moveTo(px + e, py); f.lineTo(px + e, py + TS); }
+          if (!isRock(world, x + 1, y)) { f.moveTo(px + TS - e, py); f.lineTo(px + TS - e, py + TS); }
+          f.stroke();
+          f.restore();
+          continue;
+        }
+        if (theme === "desert" && hash(x, y) % 3 === 0) {
+          // cactus
+          f.fillStyle = "rgba(0,0,0,0.25)";
+          f.beginPath();
+          f.ellipse(px + TS * 0.6, py + TS * 0.85, TS * 0.42, TS * 0.14, 0, 0, Math.PI * 2);
+          f.fill();
+          f.fillStyle = "#3f8f4a";
+          f.strokeStyle = "#245c2c";
+          f.lineWidth = Math.max(1, TS * 0.05);
+          const body = (x0, y0, w, h) => {
+            f.beginPath();
+            if (f.roundRect) f.roundRect(x0, y0, w, h, w / 2);
+            else f.rect(x0, y0, w, h);
+            f.fill();
+            f.stroke();
+          };
+          body(px + TS * 0.38, py + TS * 0.08, TS * 0.26, TS * 0.84);
+          body(px + TS * 0.12, py + TS * 0.3, TS * 0.18, TS * 0.36);
+          body(px + TS * 0.12, py + TS * 0.52, TS * 0.32, TS * 0.14);
+          body(px + TS * 0.7, py + TS * 0.22, TS * 0.18, TS * 0.32);
+          body(px + TS * 0.56, py + TS * 0.42, TS * 0.3, TS * 0.13);
+          continue;
+        }
+        if (theme === "desert") {
+          // sandstone
+          f.fillStyle = "#4a3320";
+          f.fillRect(px + TS * 0.06, py + TS * 0.12, TS, TS);
+          f.fillStyle = "#a8743e";
+          f.fillRect(px, py, TS, TS);
+          f.fillStyle = "#c48a4c";
+          f.fillRect(px + TS * 0.08, py + TS * 0.08, TS * 0.84, TS * 0.62);
+          f.fillStyle = "rgba(90,50,20,0.35)";
+          f.fillRect(px + TS * 0.08, py + TS * 0.38, TS * 0.84, TS * 0.06);
+          continue;
+        }
         f.fillStyle = "#11151f";
         f.fillRect(px + TS * 0.06, py + TS * 0.12, TS, TS);
         f.fillStyle = "#4a5366";
@@ -129,8 +231,13 @@ export function createRenderer(canvas) {
         f.fill();
       }
     }
+    // pac-maze ghost-house door
+    if (theme === "pac") {
+      f.fillStyle = "#ff7ae0";
+      f.fillRect(14 * TS, 9.42 * TS, 2 * TS, 0.16 * TS);
+    }
     // border
-    f.strokeStyle = "#5a6884";
+    f.strokeStyle = theme === "pac" ? "#3d5bff" : theme === "desert" ? "#a8743e" : "#5a6884";
     f.lineWidth = TS * 0.12;
     f.strokeRect(0, 0, c.width, c.height);
     v.floor = c;
@@ -304,6 +411,174 @@ export function createRenderer(canvas) {
       }
       ctx.restore();
     }
+  }
+
+  // ---- map gimmicks -------------------------------------------------------------
+
+  function drawTeleporters(g) {
+    const TS = v.TS;
+    const tps = (g.map && g.map.teleporters) || [];
+    tps.forEach((pair, i) => {
+      const col = i % 2 ? "255,122,224" : "92,246,255";
+      for (const pad of pair) {
+        const x = sx(pad.x);
+        const y = sy(pad.y);
+        const grad = ctx.createRadialGradient(x, y, 0, x, y, TS * 0.55);
+        grad.addColorStop(0, `rgba(${col},0.55)`);
+        grad.addColorStop(1, `rgba(${col},0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(x, y, TS * 0.55, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = Math.max(1.5, TS * 0.07);
+        for (let k = 0; k < 3; k++) {
+          const a = g.time * (2.5 + k) * (k % 2 ? -1 : 1);
+          ctx.strokeStyle = `rgba(${col},${0.9 - k * 0.22})`;
+          ctx.beginPath();
+          ctx.arc(x, y, TS * (0.18 + k * 0.1), a, a + Math.PI * 1.3);
+          ctx.stroke();
+        }
+      }
+    });
+  }
+
+  function drawTrackWarning(g) {
+    const tr = g.train;
+    if (!tr || !g.map.track) return;
+    const TS = v.TS;
+    const tx = g.map.track.x;
+    const flash = Math.sin(g.time * 14) > 0;
+    // signal lights at both ends of the line
+    for (const yy of [0.5, GH - 0.5]) {
+      for (const ox of [-1.6, 1.6]) {
+        const lit = tr.phase !== "idle" && (ox < 0 ? flash : !flash);
+        ctx.fillStyle = "#222";
+        ctx.beginPath();
+        ctx.arc(sx(tx + ox), sy(yy), TS * 0.24, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = lit ? "#ff3b3b" : "#4a1a1a";
+        if (lit) {
+          ctx.shadowColor = "#ff3b3b";
+          ctx.shadowBlur = TS * 0.6;
+        }
+        ctx.beginPath();
+        ctx.arc(sx(tx + ox), sy(yy), TS * 0.16, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+    }
+    if (tr.phase === "warn") {
+      ctx.fillStyle = flash ? "rgba(255,50,50,0.22)" : "rgba(255,50,50,0.1)";
+      ctx.fillRect(sx(tx - 1.05), sy(0), 2.1 * TS, GH * TS);
+      ctx.save();
+      ctx.translate(sx(tx), sy(GH / 2));
+      ctx.rotate(-Math.PI / 2);
+      label("⚠ TRAIN ⚠", 0, 0, TS * 0.7, flash ? "#ffdddd" : "#ff6b6b", "center", 900);
+      ctx.restore();
+    }
+  }
+
+  function drawPacs(g) {
+    const TS = v.TS;
+    for (const pc of g.pacs || []) {
+      if (!pc.alive) continue;
+      const x = sx(pc.x);
+      const y = sy(pc.y);
+      const r = PAC_R * TS * 1.05;
+      const dir = Math.atan2(pc.dy || 0, pc.dx || 1);
+      const open = 0.08 + Math.abs(Math.sin(g.time * 11 + pc.x)) * (pc.chomp > 0 ? 0.9 : 0.6);
+      ctx.globalAlpha = pc.release > 0 ? 0.55 : 1;
+      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.beginPath();
+      ctx.ellipse(x + r * 0.1, y + r * 0.4, r, r * 0.7, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#ffe14d";
+      ctx.shadowColor = "#ffe14d";
+      ctx.shadowBlur = TS * 0.3;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.arc(x, y, r, dir + open, dir + Math.PI * 2 - open);
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      // eye
+      const ex = x + Math.cos(dir - Math.PI / 2.4) * r * 0.5;
+      const ey = y + Math.sin(dir - Math.PI / 2.4) * r * 0.5;
+      ctx.fillStyle = "#111";
+      ctx.beginPath();
+      ctx.arc(ex, ey, r * 0.13, 0, Math.PI * 2);
+      ctx.fill();
+      // health once it's been hit
+      if (pc.hp < 80) {
+        ctx.fillStyle = "rgba(0,0,0,0.6)";
+        ctx.fillRect(x - r, y - r - TS * 0.25, r * 2, TS * 0.1);
+        ctx.fillStyle = "#ffe14d";
+        ctx.fillRect(x - r, y - r - TS * 0.25, r * 2 * (pc.hp / 80), TS * 0.1);
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  function drawTrain(g) {
+    const tr = g.train;
+    if (!tr || tr.phase !== "run") return;
+    const TS = v.TS;
+    const tx = g.map.track.x;
+    // trains enter and leave through the map edge: clip to the arena
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(sx(0), sy(0), GW * TS, GH * TS);
+    ctx.clip();
+    const x0 = sx(tx - 0.95);
+    const w = 1.9 * TS;
+    // cars from the head backwards: locomotive (3 tiles) + two wagons
+    const parts = [{ len: 3, loco: true }, { len: 2.85 }, { len: 2.85 }];
+    let at = tr.y;
+    for (const part of parts) {
+      const yA = at;
+      const yB = at - tr.dir * part.len;
+      const top = sy(Math.min(yA, yB));
+      const h = part.len * TS;
+      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.fillRect(x0 + TS * 0.12, top + TS * 0.12, w, h);
+      if (part.loco) {
+        ctx.fillStyle = "#8c2a22";
+        ctx.fillRect(x0, top, w, h);
+        ctx.fillStyle = "#b8463a";
+        ctx.fillRect(x0 + w * 0.15, top + TS * 0.1, w * 0.7, h - TS * 0.2);
+        // cab at the back, nose at the front
+        const cabY = tr.dir > 0 ? top + TS * 0.15 : top + h - TS * 1.05;
+        ctx.fillStyle = "#3a1410";
+        ctx.fillRect(x0 + w * 0.2, cabY, w * 0.6, TS * 0.9);
+        ctx.fillStyle = "#9fd6ff";
+        ctx.fillRect(x0 + w * 0.3, cabY + TS * 0.15, w * 0.4, TS * 0.3);
+        // headlight
+        const hy = tr.dir > 0 ? top + h - TS * 0.15 : top + TS * 0.15;
+        ctx.fillStyle = "#fff4b0";
+        ctx.shadowColor = "#fff4b0";
+        ctx.shadowBlur = TS;
+        ctx.beginPath();
+        ctx.arc(x0 + w / 2, hy, TS * 0.16, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      } else {
+        ctx.fillStyle = "#6f4a2a";
+        ctx.fillRect(x0, top, w, h);
+        ctx.strokeStyle = "rgba(0,0,0,0.35)";
+        ctx.lineWidth = Math.max(1, TS * 0.05);
+        ctx.beginPath();
+        for (let k = 1; k < 4; k++) {
+          ctx.moveTo(x0 + (w * k) / 4, top);
+          ctx.lineTo(x0 + (w * k) / 4, top + h);
+        }
+        ctx.stroke();
+        ctx.fillStyle = "rgba(255,255,255,0.1)";
+        ctx.fillRect(x0, top, w * 0.12, h);
+      }
+      at = yB - tr.dir * 0.15; // coupling gap
+    }
+    ctx.restore();
+    void TRAIN_LEN;
   }
 
   function drawMedkits(g) {
@@ -1544,7 +1819,7 @@ export function createRenderer(canvas) {
     ctx.setTransform(v.dpr, 0, 0, v.dpr, 0, 0);
     ctx.fillStyle = "#0b0f18";
     ctx.fillRect(0, 0, v.W, v.H);
-    if (!v.floor || v.floorTeams !== (g.numTeams || 2)) buildFloor(g.world, g.numTeams || 2);
+    if (!v.floor || v.floorTeams !== (g.numTeams || 2) || v.floorTheme !== ((g.world.map && g.world.map.theme) || "arena")) buildFloor(g.world, g.numTeams || 2);
 
     ctx.save();
     if (v.portrait) ctx.transform(0, -1, 1, 0, v.OX, v.OY + GW * v.TS);
@@ -1554,6 +1829,8 @@ export function createRenderer(canvas) {
     }
     ctx.drawImage(v.floor, v.ox, v.oy, GW * v.TS, GH * v.TS);
     drawMedkits(g);
+    drawTeleporters(g);
+    drawTrackWarning(g);
     drawWalls(g);
     for (const i of meta.humans) {
       const p = g.players[i];
@@ -1562,7 +1839,9 @@ export function createRenderer(canvas) {
       drawAimPreview(g, p);
     }
     drawBullets(g);
+    drawPacs(g);
     for (const q of g.players) drawPlayer(g, q);
+    drawTrain(g);
     drawFx(g);
     ctx.restore();
 

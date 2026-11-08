@@ -261,3 +261,6 @@ body.is-online .online-only { display: block; }
 
 #buildStyle button { display: flex; flex-direction: column; align-items: center; line-height: 1.1; text-transform: none; }
 #buildStyle button small { font-size: 9px; font-weight: 700; opacity: 0.75; }
+
+#mapPick button { font-size: 12px; padding: 8px 4px; text-transform: none; }
+.map-note { margin: -4px 0 0 76px; font-size: 11px; }

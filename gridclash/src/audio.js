@@ -90,6 +90,12 @@ export function playEvents(events, me, myTeam = me) {
         break;
       case "tileHit": noise(0.04, 1200, 2, 0.08, "bandpass"); break;
       case "bounce": tone(1800, 2400, 0.04, 0.05, "triangle"); break;
+      case "teleport": tone(400, 1600, 0.18, 0.08, "sine"); break;
+      case "chomp": tone(300, 200, 0.08, 0.14, "square"); tone(260, 160, 0.08, 0.12, "square"); if (mine) vibrate(40); break;
+      case "pacDown": tone(900, 120, 0.4, 0.12, "square"); break;
+      case "trainWarn": tone(880, 880, 0.35, 0.12, "square"); setTimeout(() => tone(740, 740, 0.35, 0.12, "square"), 450); break;
+      case "trainGo": noise(1.2, 300, 0.5, 0.35); tone(110, 90, 1.0, 0.18, "sawtooth"); break;
+      case "trainHit": noise(0.4, 500, 0.6, 0.5); if (mine) vibrate(150); break;
       case "tileBreak": noise(0.18, 600, 1, 0.3); tone(200, 80, 0.12, 0.08, "triangle"); break;
       case "build":
         if (mine) vibrate(12);

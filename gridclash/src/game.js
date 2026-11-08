@@ -19,6 +19,8 @@
 
 import { GUN_BY_ID } from "./guns.js";
 import { baseBuffs, buffsFrom, dealHand, CARD_BY_ID, rarityRank } from "./cards.js";
+import { mapOf } from "./maps.js";
+import { initHazards, updateHazards, bulletHitsHazard, explodeHazards, checkTeleport, hurtPac } from "./hazards.js";
 import {
   GW, GH, WALL_COST, SPAWNS, MEDKIT_SPOTS,
   createWorld, clearWalls, raycast, lineClear, segCircle, isSolid,
@@ -70,10 +72,13 @@ function makePlayer(id, team, loadout, name) {
 // 1 red) per player; defaults to alternating, so 2 players = 1v1 and
 // 4 players = 2v2 with ids 0,2 on blue and 1,3 on red.
 // cards: deal buff cards before every round (local app)
-export function createGame({ loadouts, names, controllers, seed, teams, cards }) {
+// map: a map id from maps.js (default "arena")
+export function createGame({ loadouts, names, controllers, seed, teams, cards, map }) {
+  const mapDef = mapOf(map);
   const tm = teams || loadouts.map((_, i) => i % 2);
   const g = {
-    world: createWorld(),
+    world: createWorld(mapDef),
+    map: mapDef,
     players: loadouts.map((l, i) => makePlayer(i, tm[i], l, names[i])),
     controllers,
     useCards: !!cards,
@@ -84,7 +89,7 @@ export function createGame({ loadouts, names, controllers, seed, teams, cards })
     booms: [],
     particles: [],
     texts: [],
-    medkits: MEDKIT_SPOTS.map((s) => ({ ...s, up: false, t: MEDKIT_EVERY * 0.5 })),
+    medkits: (mapDef.medkits || MEDKIT_SPOTS).map((s) => ({ ...s, up: false, t: MEDKIT_EVERY * 0.5 })),
     events: [],
     state: "countdown",
     stateT: 3,
@@ -116,6 +121,7 @@ function mulberry(a) {
 
 function resetRound(g) {
   clearWalls(g.world);
+  initHazards(g);
   g.bullets.length = 0;
   g.beams.length = 0;
   g.booms.length = 0;
@@ -127,7 +133,7 @@ function resetRound(g) {
   }
   g.players.forEach((p) => {
     if (g.numTeams > 2) {
-      const sp = FFA_SPAWNS[g.numTeams][p.team];
+      const sp = ((g.map.ffa && g.map.ffa[g.numTeams]) || FFA_SPAWNS[g.numTeams])[p.team];
       p.x = sp.x;
       p.y = sp.y;
     } else {
@@ -255,6 +261,7 @@ export function step(g, dt) {
       applyCommand(g, p, cmd, dt);
     });
     updatePlayers(g, dt);
+    updateHazards(g, dt, HAZARD_API);
     updateMedkits(g, dt);
     g.timeLeft -= dt;
     if (g.timeLeft <= 0 && g.state === "fight") {
@@ -520,7 +527,17 @@ function updatePlayers(g, dt) {
 
     p.x += p.vx * dt;
     p.y += p.vy * dt;
+    // knockback (Pac-Men, trains)
+    if (p.kx || p.ky) {
+      p.x += p.kx * dt;
+      p.y += p.ky * dt;
+      const f = Math.max(0, 1 - 7 * dt);
+      p.kx *= f;
+      p.ky *= f;
+      if (Math.abs(p.kx) + Math.abs(p.ky) < 0.1) p.kx = p.ky = 0;
+    }
     collideCircle(g.world, p);
+    checkTeleport(g, p, HAZARD_API);
 
     p.mats = Math.min(MAX_MATS, p.mats + MATS_REGEN * p.buffs.matsRegen * dt);
     if (p.slowT > 0) p.slowT = Math.max(0, p.slowT - dt);
@@ -651,6 +668,16 @@ function updateBullets(g, dt) {
         target = p;
       }
     }
+    const hz = bulletHitsHazard(g, b.x, b.y, b.dx, b.dy, hitDist);
+    if (hz && hz.t < hitDist) {
+      b.x += b.dx * hz.t;
+      b.y += b.dy * hz.t;
+      if (b.kind === "rocket") explode(g, b.x, b.y, b.def, b.owner);
+      else hurtPac(g, hz.pc, b.dmg, HAZARD_API);
+      spark(g, b.x, b.y, "#ffe14d", 4);
+      g.bullets.splice(i, 1);
+      continue;
+    }
     b.x += b.dx * hitDist;
     b.y += b.dy * hitDist;
     b.left -= hitDist;
@@ -740,6 +767,7 @@ function explode(g, x, y, def, ownerId, sub = false) {
     }
   }
   g.booms.push({ x, y, R, t: 0, life: 0.45, color: def.color });
+  explodeHazards(g, x, y, R, def.dmg, HAZARD_API);
   // cluster bombs burst into bomblets around the impact
   if (def.cluster && !sub) {
     for (let k = 0; k < def.cluster; k++) {
@@ -811,6 +839,13 @@ function damagePlayer(g, p, amount, by) {
     if (standing.size <= 1) endRound(g, standing.size ? [...standing][0] : -1);
   }
 }
+
+// what hazards.js may do to the match
+const HAZARD_API = {
+  damage: (g, p, amount, by) => damagePlayer(g, p, amount, by),
+  hitTile: (g, cx, cy, amount, by) => hitTile(g, cx, cy, amount, by),
+  emit: (g, e) => emit(g, e),
+};
 
 function spark(g, x, y, color, n) {
   for (let k = 0; k < n; k++) {
@@ -1037,6 +1072,8 @@ export function predictMove(g, p, mx, my, aiming, dt) {
 
 export function stepVisual(g, dt) {
   g.time += dt;
+  // keep the train gliding between snapshots
+  if (g.train && g.train.phase === "run") g.train.y += g.train.dir * 14 * dt;
   g.shake = Math.max(0, g.shake - dt * 3);
   for (const p of g.players) {
     p.hitFlash = Math.max(0, p.hitFlash - dt * 4);

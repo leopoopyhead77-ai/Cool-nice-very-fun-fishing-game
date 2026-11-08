@@ -30,13 +30,15 @@ export const MEDKIT_SPOTS = [
   { x: 15, y: 15.5 },
 ];
 
-export function createWorld() {
+// map: an entry from maps.js (rock is given for the left half, mirrored)
+export function createWorld(map) {
   const rock = new Uint8Array(GW * GH);
-  for (const [x, y] of ROCK_LEFT) {
+  for (const [x, y] of map ? map.rock : ROCK_LEFT) {
     rock[y * GW + x] = 1;
     rock[y * GW + (GW - 1 - x)] = 1;
   }
   return {
+    map: map || null,
     rock,
     // per-cell reference to a living wall tile: { wall, i } or null
     wallAt: new Array(GW * GH).fill(null),

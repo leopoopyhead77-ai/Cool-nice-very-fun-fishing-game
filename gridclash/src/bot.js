@@ -8,6 +8,7 @@
 import { WALL_COST, GW, GH, isSolid, lineClear, raycast, tileAt, inBounds } from "./world.js";
 import { enemyOf, gunOf, buildPreview } from "./game.js";
 import { CARD_BY_ID, rarityRank } from "./cards.js";
+import { dangerFor } from "./hazards.js";
 
 const PROFILES = {
   easy:   { react: 0.6,  err: 0.24,  build: 0.25, edit: 0.25, lead: 0,   strafe: 0.55, cover: 6,   fire: 0.6 },
@@ -295,6 +296,21 @@ export function createBot(difficulty = "normal") {
             my += wy / wd;
           }
         }
+      }
+
+      // map hazards: keep away from Pac-Men; get off the tracks when a train is due
+      const dz = dangerFor(g);
+      for (const d of dz.spots) {
+        const dd = Math.hypot(p.x - d.x, p.y - d.y);
+        if (dd < d.r) {
+          mx += ((p.x - d.x) / (dd + 0.01)) * 2.5 * (1 - dd / d.r + 0.3);
+          my += ((p.y - d.y) / (dd + 0.01)) * 2.5 * (1 - dd / d.r + 0.3);
+        }
+      }
+      if (dz.trackX !== null && Math.abs(p.x - dz.trackX) < 2.6) {
+        const side = p.x === dz.trackX ? (p.team === 0 ? -1 : 1) : Math.sign(p.x - dz.trackX);
+        mx += side * 4;
+        my *= 0.3;
       }
 
       // unstick

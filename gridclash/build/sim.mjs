@@ -163,6 +163,35 @@ for (const n of [3, 4]) {
   if (shieldSoaked === 0) throw new Error("shield never absorbed damage");
 }
 
+// every map: 1v1 and a 4-player free-for-all must finish cleanly
+{
+  const { MAP_IDS } = await import("../src/maps.js");
+  for (const map of MAP_IDS) {
+    for (const n of [2, 4]) {
+      const g = createGame({
+        loadouts: Array.from({ length: n }, (_, i) => [ids[(i * 5) % ids.length], ids[(i * 5 + 3) % ids.length]]),
+        names: Array.from({ length: n }, (_, i) => "P" + i),
+        teams: Array.from({ length: n }, (_, i) => i),
+        controllers: Array.from({ length: n }, () => createBot("normal")),
+        seed: 77 + n, map,
+      });
+      const ev = {};
+      let t = 0;
+      while (g.state !== "matchEnd" && t < 60 * 60 * 16) {
+        step(g, DT);
+        for (const e of g.events) ev[e.t] = (ev[e.t] || 0) + 1;
+        g.events.length = 0;
+        t++;
+        for (const p of g.players) {
+          if (!Number.isFinite(p.x) || p.x < 0 || p.x > 30 || p.y < 0 || p.y > 20) throw new Error(`${map}: bad position`);
+        }
+      }
+      if (g.state !== "matchEnd") throw new Error(`${map} ${n}p never finished`);
+      console.log(`map ${map.padEnd(7)} ${n}p  score ${g.score.join("-")}  ${(t / 60).toFixed(0)}s  teleports ${ev.teleport || 0}  chomps ${ev.chomp || 0}  trains ${ev.trainGo || 0} (hits ${ev.trainHit || 0})`);
+    }
+  }
+}
+
 console.log(`\n${matches} matches, ${(frames / 60 / 60).toFixed(1)} sim-minutes`);
 console.log(`walls built: ${totalWalls}, edits: ${totalEdits}`);
 console.log("rounds fired per gun:", fired);

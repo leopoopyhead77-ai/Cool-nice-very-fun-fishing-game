@@ -16,6 +16,7 @@ const APP = typeof __APP__ !== "undefined" ? __APP__ : "local";
 const IS_ONLINE_APP = APP === "online";
 import { createRemoteController, createHostSync, createGuestView } from "./online.js";
 import { gunIconURL } from "./art.js";
+import { MAPS, MAP_IDS } from "./maps.js";
 
 const ME = 0;
 const NAMES_BOT = ["YOU", "BOT"];
@@ -38,7 +39,11 @@ const settings = {
   // "stick": BUILD is its own joystick with a crosshair (tap = quick wall)
   // "classic": the original — BUILD switches the aim stick into a build stick
   buildStyle: load("buildStyle", "stick"),
+  map: load("map", "arena"),
 };
+if (settings.map !== "random" && !MAPS[settings.map]) settings.map = "arena";
+// "random" picks a map each match
+const pickMap = () => (settings.map === "random" ? MAP_IDS[Math.floor(Math.random() * MAP_IDS.length)] : settings.map);
 if (!["stick", "classic"].includes(settings.buildStyle)) settings.buildStyle = "stick";
 if (!MODES[settings.netMode]) settings.netMode = "1v1";
 const validLoadout = (l) => Array.isArray(l) && l.length === 2 && l.every((id) => GUN_BY_ID[id]);
@@ -68,6 +73,14 @@ app.innerHTML = `
           ${DIFFS.map((d) => `<button data-d="${d}">${d}</button>`).join("")}
         </div>
       </div>
+      <div class="row">
+        <span class="lbl">Map</span>
+        <div class="seg" id="mapPick">
+          ${MAP_IDS.map((id) => `<button data-m="${id}">${MAPS[id].name}</button>`).join("")}
+          <button data-m="random">Random</button>
+        </div>
+      </div>
+      <p class="tag map-note" id="mapNote"></p>
       <div class="row">
         <span class="lbl">Build</span>
         <div class="seg" id="buildStyle">
@@ -204,6 +217,8 @@ function show(name) {
 // ---- menu ---------------------------------------------------------------------
 
 function refreshMenu() {
+  $("mapPick").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.m === settings.map));
+  $("mapNote").textContent = settings.map === "random" ? "A different map every match." : MAPS[settings.map].desc;
   $("buildStyle").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.b === settings.buildStyle));
   $("diff").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.d === settings.difficulty));
   $("openLoadout").innerHTML = settings.loadout
@@ -217,6 +232,14 @@ $("diff").addEventListener("click", (e) => {
   if (!d) return;
   settings.difficulty = d;
   save("difficulty", d);
+  click();
+  refreshMenu();
+});
+$("mapPick").addEventListener("click", (e) => {
+  const m = e.target.closest("button")?.dataset.m;
+  if (!m) return;
+  settings.map = m;
+  save("map", m);
   click();
   refreshMenu();
 });
@@ -575,6 +598,7 @@ function startMatch(mode = matchMode) {
       : [input.controllers[0], createBot(settings.difficulty)],
     // the local app deals buff cards before every round
     cards: !IS_ONLINE_APP,
+    map: pickMap(),
   });
   paused = false;
   show(null);
@@ -642,12 +666,15 @@ function frame(now) {
 
 // A slow-panning demo match behind the main menu.
 let demo = null;
+let demoMap = -1;
 function drawIdle(t) {
   if (!demo || demo.state === "matchEnd" || (demo.state === "roundEnd" && demo.stateT < 0.1)) {
+    demoMap = (demoMap + 1) % MAP_IDS.length;
     demo = createGame({
       loadouts: [["ar", "shotgun"], ["burst", "smg"]],
       names: ["BLUE", "RED"],
       controllers: [createBot("hard"), createBot("hard")],
+      map: MAP_IDS[demoMap],
     });
     demo.state = "fight";
   }
@@ -822,7 +849,7 @@ function renderLobby() {
     ? host.slots.map((s) => (s ? { name: s.name, cid: s.cid, link: s.link, ping: s.ping } : null))
     : lobbyInfo?.slots || [];
   $("lbCode").textContent = code || "";
-  $("lbMode").textContent = mode;
+  $("lbMode").textContent = isHost ? `${mode} · ${settings.map === "random" ? "Random map" : MAPS[settings.map].name}` : mode;
   $("lbHint").textContent = isHost
     ? "You're hosting. Tell your friends this PIN — they tap PLAY ONLINE → Join with PIN. Start whenever you're ready; empty seats get bots."
     : "You're in! Waiting for the host to start the match…";
@@ -877,10 +904,11 @@ function startOnlineMatch() {
   input.reset();
   input.setPvp(false);
   resize();
-  game = createGame({ loadouts, names: nm, controllers, seed, teams });
+  const map = pickMap();
+  game = createGame({ loadouts, names: nm, controllers, seed, teams, map });
   host.started = true;
   hostSync = createHostSync(host, game, mid, hostRemotes);
-  const msg = { t: "start", mid, seed, loadouts, names: nm, teams, slots: slots.map((s) => (s ? s.cid : null)) };
+  const msg = { t: "start", mid, seed, loadouts, names: nm, teams, map, slots: slots.map((s) => (s ? s.cid : null)) };
   host.broadcast(msg);
   // the start message is important: repeat it in case a guest misses one
   [600, 1300, 2200].forEach((ms) => setTimeout(() => host && host.started && hostSync && host.broadcast(msg), ms));

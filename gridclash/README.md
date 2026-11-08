@@ -107,6 +107,18 @@ The bot picks cards too. It prefers rarer cards, and damage and shield cards.
 
 Being slowed shows as an icy ring and burning shows flames on the player. When you're low on health, the screen edges glow red.
 
+## Maps
+
+Pick on the main menu (both apps; the host picks online): **Arena**, **Pac-Maze**, **Desert Rail**, or **Random**.
+
+| Map | Gimmick |
+|---|---|
+| **Arena** | The original. Two teleporter pairs link opposite corners, for flanking. |
+| **Pac-Maze** | A neon maze with pellets and a ghost house. Three **Pac-Men** roam the corridors, often chasing the nearest player: they bite (18 damage plus knockback), and they chew through any wall in their way. Shoot one down (80 HP) and it respawns from the ghost house 9 seconds later. The wrap-around tunnels at the edges are teleporters. |
+| **Desert Rail** | Sand, sandstone and cacti, with a **railway down the middle**. Every so often the signal lights flash and "⚠ TRAIN ⚠" shows on the track. A couple of seconds later a train rushes through: 55 damage to anyone on the rails, knocking them off and smashing any walls on the track. Teleporters at the top and bottom cross the line safely. |
+
+**Teleporters** (swirling cyan/pink pads, in pairs): step on one and you come out of its partner. Step off the pad you arrived on before it will send you anywhere again.
+
 ## Match rules
 
 - First to 3 rounds wins. Each round lasts 90 seconds.

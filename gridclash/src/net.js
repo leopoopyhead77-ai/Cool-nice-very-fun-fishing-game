@@ -145,6 +145,11 @@ export function encodeSnapshot(g, n, extra) {
       ? [0, GUN_INDEX[b.def.id], b.owner, r2(b.sx), r2(b.sy), r2(b.tx), r2(b.ty), r2(b.t), r2(b.T)]
       : [KINDS.indexOf(b.kind), GUN_INDEX[b.def.id], b.owner, r2(b.x), r2(b.y), r3(b.dx), r3(b.dy), r2(b.speed), r2(b.left), r2(b.age)])),
     mk: g.medkits.map((m) => (m.up ? 1 : 0)),
+    // map gimmicks: Pac-Men and the train
+    hz: {
+      pc: (g.pacs || []).map((pc) => [r2(pc.x), r2(pc.y), pc.dx, pc.dy, pc.alive ? 1 : 0, r2(pc.release), r2(pc.chomp), Math.round(pc.hp)]),
+      tr: g.train ? [["idle", "warn", "run"].indexOf(g.train.phase), r2(g.train.y), g.train.dir, r2(g.train.t)] : null,
+    },
     fx: {
       bo: fresh(g.booms).map((f) => [r2(f.x), r2(f.y), f.R, f.color, r2(f.t)]),
       be: fresh(g.beams).map((f) => [r2(f.x0), r2(f.y0), r2(f.x1), r2(f.y1), f.color, r2(f.t)]),
@@ -198,6 +203,13 @@ export function applySnapshot(g, s) {
     const [k, , owner, x, y, dx, dy, speed, left, age] = a;
     return { kind: KINDS[k], def, owner, x, y, px: x, py: y, dx, dy, speed, left, age, dmg: 0 };
   });
+  if (s.hz) {
+    (s.hz.pc || []).forEach((a2, i) => {
+      const pc = g.pacs && g.pacs[i];
+      if (pc) [pc.x, pc.y, pc.dx, pc.dy, pc.alive, pc.release, pc.chomp, pc.hp] = [a2[0], a2[1], a2[2], a2[3], !!a2[4], a2[5], a2[6], a2[7]];
+    });
+    if (s.hz.tr && g.train) [g.train.phase, g.train.y, g.train.dir, g.train.t] = [["idle", "warn", "run"][s.hz.tr[0]], s.hz.tr[1], s.hz.tr[2], s.hz.tr[3]];
+  }
   s.mk.forEach((up, i) => {
     if (g.medkits[i]) g.medkits[i].up = !!up;
   });

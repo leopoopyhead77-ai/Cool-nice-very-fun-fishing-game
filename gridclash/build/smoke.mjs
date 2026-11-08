@@ -265,8 +265,29 @@ console.log("     state:", await G("g.state + ' score ' + g.score.join('-') + ' 
 check(await page.locator("#results").isVisible(), "match end shows the results screen");
 await page.screenshot({ path: resolve(shots, "8-results.png") });
 
+// ---------------------------------------------------------------- maps
+check((await page.locator("#mapPick button").count()) === 4, "menu offers Arena / Pac-Maze / Desert Rail / Random");
+for (const map of ["pac", "desert"]) {
+  await page.evaluate((m) => { window.__clash.settings.map = m; window.__clash.startMatch("bot"); }, map);
+  await page.waitForTimeout(200);
+  await page.evaluate(() => {
+    const g = window.__clash.game;
+    g.state = "fight";
+    g.stateT = 0;
+    if (g.pacs) g.pacs.forEach((p) => (p.release = 0));
+    if (g.train) { g.train.phase = "run"; g.train.y = 12; g.train.dir = 1; }
+  });
+  await page.waitForTimeout(700);
+  check((await G("g.map.id")) === map, `the chosen map loads (${map})`);
+  await page.screenshot({ path: resolve(shots, `12-map-${map}.png`) });
+}
+await page.evaluate(() => { window.__clash.settings.map = "arena"; });
+await page.evaluate(() => window.__clash.setPaused(true));
+await page.evaluate(() => document.getElementById("quit").click());
+await page.waitForTimeout(200);
+
 // ---------------------------------------------------------------- 2 players, upright phone
-await page.click("#toMenu");
+await page.evaluate(() => { const b = document.getElementById("toMenu"); if (b.offsetParent) b.click(); });
 await page.setViewportSize({ width: 390, height: 844 });
 await page.evaluate(() => document.getElementById("pvp").click());
 await page.waitForTimeout(250);
