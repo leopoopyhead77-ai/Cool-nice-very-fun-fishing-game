@@ -125,6 +125,44 @@ for (const n of [3, 4]) {
   }
 }
 
+// buff cards: a card phase before every round; picks stack; shield absorbs first
+{
+  const { CARD_BY_ID } = await import("../src/cards.js");
+  let shieldSoaked = 0;
+  const rar = { common: 0, rare: 0, epic: 0, legendary: 0 };
+  for (let k = 0; k < 8; k++) {
+    const g = createGame({
+      loadouts: [[ids[k % 12], ids[(k + 4) % 12]], [ids[(k + 7) % 12], ids[(k + 2) % 12]]],
+      names: ["A", "B"], controllers: [createBot("normal"), createBot("normal")], seed: 300 + k, cards: true,
+    });
+    if (g.state !== "cards" || g.offers.length !== 2 || g.offers[0].length !== 3) throw new Error("no card phase at match start");
+    let t = 0;
+    let phases = 0;
+    let wasCards = true;
+    while (g.state !== "matchEnd" && t < 60 * 60 * 16) {
+      const shieldsBefore = g.players.map((p) => p.shield);
+      const hpBefore = g.players.map((p) => p.hp);
+      step(g, DT);
+      g.players.forEach((p, i) => {
+        if (p.shield < shieldsBefore[i] && p.hp > hpBefore[i] - 1e-6 - 0) shieldSoaked++;
+      });
+      if (g.state === "cards" && !wasCards) phases++;
+      wasCards = g.state === "cards";
+      g.events.length = 0;
+      t++;
+    }
+    if (g.state !== "matchEnd") throw new Error(`card match ${k} never finished`);
+    const rounds = g.round;
+    for (const p of g.players) {
+      if (p.cards.length !== rounds) throw new Error(`player has ${p.cards.length} cards after ${rounds} rounds`);
+      for (const c of p.cards) rar[CARD_BY_ID[c].rarity]++;
+    }
+    console.log(`cards ${k}  score ${g.score.join("-")}  rounds ${rounds}  A: ${g.players[0].cards.join(",")}  B: ${g.players[1].cards.join(",")}`);
+  }
+  console.log("cards kept by rarity:", rar, " shield hits soaked:", shieldSoaked);
+  if (shieldSoaked === 0) throw new Error("shield never absorbed damage");
+}
+
 console.log(`\n${matches} matches, ${(frames / 60 / 60).toFixed(1)} sim-minutes`);
 console.log(`walls built: ${totalWalls}, edits: ${totalEdits}`);
 console.log("rounds fired per gun:", fired);

@@ -116,7 +116,7 @@ await waitFor(gst, () => window.__clash.game.state === "fight", null, 8000);
 
 const L = await gst.evaluate(() => {
   const pad = window.__clash.layout.pads[0];
-  return { move: pad.move, aim: pad.aim, build: pad.build, slot0: { x: pad.slot0.cx, y: pad.slot0.cy } };
+  return { move: pad.move, aim: pad.aim, build: pad.build, edit: pad.edit, slot0: { x: pad.slot0.cx, y: pad.slot0.cy } };
 });
 // guest walks left (toward blue) — the HOST's simulation must move red
 const hx0 = await G(host, "g.players[1].x");
@@ -142,31 +142,23 @@ await gst.waitForTimeout(1500);
 const s1 = await G(host, "g.players[1].stats.shots");
 check(s1 > s0, `guest's shot is fired on the host (+${s1 - s0} rounds)`);
 
-// guest builds a wall
-await gst.evaluate(() => {}); // noop
-await touch(gst, "pointerdown", 3, L.build.x, L.build.y);
-await touch(gst, "pointerup", 3, L.build.x, L.build.y);
-await gst.waitForTimeout(150);
-check((await G(gst, "g.players[1].mode")) === "build", "guest's BUILD button switches instantly (predicted)");
+// guest builds a wall: drag up from BUILD (one-touch building, no modes)
 const w0 = await G(host, "g.world.walls.filter((w) => w.owner === 1).length");
-await touch(gst, "pointerdown", 4, L.aim.x, L.aim.y);
-// aim up: the wall lands on open floor above red (left of red there's rock)
-await touch(gst, "pointermove", 4, L.aim.x, L.aim.y - 30);
-await gst.waitForTimeout(200);
-await touch(gst, "pointerup", 4, L.aim.x, L.aim.y - 30);
+await touch(gst, "pointerdown", 3, L.build.x, L.build.y);
+await touch(gst, "pointermove", 3, L.build.x, L.build.y - 40);
+await gst.waitForTimeout(150);
+check(!!(await G(gst, "g.players[1].buildAim")), "guest sees their build preview instantly while dragging BUILD");
+await touch(gst, "pointerup", 3, L.build.x, L.build.y - 40);
 await gst.waitForTimeout(1500);
 const w1 = await G(host, "g.world.walls.filter((w) => w.owner === 1).length");
 const gw = await G(gst, "g.world.walls.filter((w) => w.owner === 1).length");
 check(w1 === w0 + 1 && gw === w1, `guest's wall lands on the host and shows on the guest (host ${w1}, guest ${gw})`);
 
-// guest edits it
-await touch(gst, "pointerdown", 5, L.slot0.x, L.slot0.y);
-await touch(gst, "pointerup", 5, L.slot0.x, L.slot0.y);
+// guest edits it: drag from EDIT toward the wall
+await touch(gst, "pointerdown", 5, L.edit.x, L.edit.y);
+await touch(gst, "pointermove", 5, L.edit.x, L.edit.y - 60);
 await gst.waitForTimeout(150);
-await touch(gst, "pointerdown", 6, L.aim.x, L.aim.y);
-await touch(gst, "pointermove", 6, L.aim.x, L.aim.y - 45);
-await gst.waitForTimeout(150);
-await touch(gst, "pointerup", 6, L.aim.x, L.aim.y - 45);
+await touch(gst, "pointerup", 5, L.edit.x, L.edit.y - 60);
 await gst.waitForTimeout(1500);
 const edited = await G(host, "g.world.walls.some((w) => w.owner === 1 && w.edit >= 0)");
 check(edited, "guest's edit opens a tile of their wall on the host");

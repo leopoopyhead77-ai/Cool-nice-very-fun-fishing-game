@@ -116,6 +116,8 @@ await pg.context().setOffline(false);
 
 // touch play
 await pg.click("#play");
+await pg.waitForTimeout(200);
+await pg.click("#selP0 .sel-ready"); // item pick → FIGHT
 await pg.waitForTimeout(300);
 await pg.evaluate(() => {
   window.__clash.setPaused(true);

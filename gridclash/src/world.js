@@ -202,7 +202,7 @@ export function wallPlacement(w, players, x, y, angle, mag) {
 }
 
 // owner: the builder's player id (only they can edit it); team: for colour.
-export function placeWall(w, owner, placement, time, team = owner) {
+export function placeWall(w, owner, placement, time, team = owner, hpMul = 1) {
   const wall = {
     id: w.nextWallId++,
     owner,
@@ -210,7 +210,7 @@ export function placeWall(w, owner, placement, time, team = owner) {
     vertical: placement.vertical,
     edit: -1,
     born: time,
-    cells: placement.cells.map(([x, y]) => ({ x, y, hp: TILE_HP, alive: true })),
+    cells: placement.cells.map(([x, y]) => ({ x, y, hp: TILE_HP * hpMul, max: TILE_HP * hpMul, alive: true })),
   };
   wall.cells.forEach((c, i) => {
     w.wallAt[c.y * GW + c.x] = { wall, i };

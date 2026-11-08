@@ -7,6 +7,7 @@
 
 import { WALL_COST, GW, GH, isSolid, lineClear, raycast, tileAt, inBounds } from "./world.js";
 import { enemyOf, gunOf, buildPreview } from "./game.js";
+import { CARD_BY_ID, rarityRank } from "./cards.js";
 
 const PROFILES = {
   easy:   { react: 0.6,  err: 0.24,  build: 0.25, edit: 0.25, lead: 0,   strafe: 0.55, cover: 6,   fire: 0.6 },
@@ -24,7 +25,7 @@ export function createBot(difficulty = "normal") {
   const s = {
     path: [], pathT: 0, strafeDir: 1, strafeT: 0,
     aimT: 0, aimErr: 0, lastHp: 100, buildCd: 1.5, swapCd: 0,
-    peek: null, stuckT: 0, lastX: 0, lastY: 0, goal: -1, blindT: 0,
+    peek: null, stuckT: 0, lastX: 0, lastY: 0, goal: -1, blindT: 0, cardT: 0,
   };
 
   function rand() {
@@ -110,6 +111,27 @@ export function createBot(difficulty = "normal") {
   return {
     poll(g, p, dt) {
       const cmd = { mx: 0, my: 0, aiming: false, aimAngle: 0, aimMag: 0, actions: [] };
+      // between rounds: take a card after a short "think", preferring rarity
+      if (g.state === "cards") {
+        s.cardT += dt;
+        const hand = g.offers[p.id];
+        if (hand && g.picks[p.id] < 0 && s.cardT > 1.2 + rand() * 1.5) {
+          const like = { dmg: 1.2, shield: 1.1, armor: 1, hp: 1, rate: 0.9, leech: 0.9 };
+          let best = 0;
+          let bestScore = -1;
+          hand.forEach((id, k) => {
+            const c = CARD_BY_ID[id];
+            const score = rarityRank(c.rarity) * 2 + (like[c.kind] || 0.6) + rand() * 0.8;
+            if (score > bestScore) {
+              bestScore = score;
+              best = k;
+            }
+          });
+          cmd.actions.push({ t: "card", i: best });
+        }
+        return cmd;
+      }
+      s.cardT = 0;
       const e = enemyOf(g, p);
       if (!e.alive || g.state !== "fight") return cmd;
       const w = g.world;

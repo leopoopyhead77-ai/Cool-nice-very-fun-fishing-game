@@ -1,7 +1,16 @@
 // Touch controls, for one player (vs bot) or two players on one phone.
 //
-// Each human gets a "pad": a move stick, an aim stick, a BUILD button above
-// the aim stick and two weapon-slot buttons (EDIT / RESET in build mode).
+// Each human gets a "pad": a move stick, an aim stick (always shoots), a
+// BUILD button above the aim stick with EDIT and RESET beside it, and two
+// weapon-slot buttons.
+//
+// Building (no mode switching):
+//   tap BUILD            – a wall drops right in front of you
+//   drag from BUILD      – aim where it lands (live preview), release to place;
+//                          drag back onto the button to cancel
+//   tap EDIT             – cut a gap in (or restore) your wall in front of you
+//   drag from EDIT       – pick which wall tile, release to cut / restore
+//   tap ↺ (reset)        – restore your nearest edited wall
 //
 // Solo (landscape, held normally):
 //   left half  – floating MOVE stick; right half – floating AIM stick.
@@ -66,6 +75,7 @@ export function layout(W, H, pvp = false) {
         aim: { x0: W / 2, y0: top, x1: W, y1: H },
       },
     };
+    addQuickButtons(pad, u);
     return {
       u, R, top, pvp: false,
       arena: fitArena(W, H, top, 4, 4),
@@ -111,6 +121,8 @@ export function layout(W, H, pvp = false) {
       move: { x0: W / 2, y0: H / 2, x1: W, y1: H },
     },
   };
+  addQuickButtons(blue, u);
+  addQuickButtons(red, u);
   return {
     u, R, top: 18 * u, pvp: true,
     arena,
@@ -144,7 +156,7 @@ function portraitPvp(W, H) {
     build: { x: W - R - 16 * u, y: H - edge - R - 30 * u, r: 24 * u }, // above the aim stick
     slot0: slotRect(W / 2, H - 58 * u, lw, lh, 0),
     slot1: slotRect(W / 2, H - 24 * u, lw, lh, 0),
-    info: { x: W / 2, y: H - band + 14 * u },
+    info: { x: 74 * u, y: H - band + 14 * u }, // score pill, clear of BUILD / EDIT / ↺
     zones: {
       move: { x0: 0, y0: H / 2, x1: W / 2, y1: H },
       aim: { x0: W / 2, y0: H / 2, x1: W, y1: H },
@@ -158,12 +170,14 @@ function portraitPvp(W, H) {
     build: flip(blue.build),
     slot0: slotRect(W / 2, 58 * u, lw, lh, Math.PI),
     slot1: slotRect(W / 2, 24 * u, lw, lh, Math.PI),
-    info: { x: W / 2, y: band - 14 * u },
+    info: { x: W - 74 * u, y: band - 14 * u },
     zones: {
       move: { x0: W / 2, y0: 0, x1: W, y1: H / 2 },
       aim: { x0: 0, y0: 0, x1: W / 2, y1: H / 2 },
     },
   };
+  addQuickButtons(blue, u);
+  addQuickButtons(red, u);
   return {
     u, R, top: 0, pvp: true, portrait: true,
     // screen directions are turned 90° from board directions in this layout
@@ -174,6 +188,38 @@ function portraitPvp(W, H) {
   };
 }
 
+// Small EDIT and RESET buttons beside BUILD, placed in the pad's own frame
+// (to the player's left of BUILD) so they sit right for every seat.
+function addQuickButtons(pad, u) {
+  const c = Math.cos(pad.rot);
+  const n = Math.sin(pad.rot);
+  const at = (lx, ly) => ({ x: pad.build.x + lx * c - ly * n, y: pad.build.y + lx * n + ly * c });
+  const gap = pad.build.r + 8 * u;
+  pad.edit = { ...at(-(gap + 22 * u), 4 * u), r: 21 * u };
+  pad.reset = { ...at(-(gap + 22 * u + 50 * u), 4 * u), r: 17 * u };
+}
+
+// Where the 3 buff cards sit for a pad, in screen space (and in the pad's own
+// frame for drawing). Shared by input (taps) and render (drawing).
+export function cardRects(L, pad, n = 3) {
+  const u = L.u;
+  const big = !L.pvp;
+  const lw = (big ? 128 : 104) * u;
+  const lh = (big ? 176 : 146) * u;
+  const gap = 10 * u;
+  const c = Math.cos(pad.rot);
+  const sn = Math.sin(pad.rot);
+  // shared phone: nudge the cards toward the middle (clear of the score pill)
+  const nudge = L.pvp ? -26 * u : 8 * u;
+  const center = { x: pad.center.x - nudge * sn, y: pad.center.y + nudge * c };
+  return Array.from({ length: n }, (_, i) => {
+    const lx = (i - (n - 1) / 2) * (lw + gap);
+    const cx = center.x + lx * c;
+    const cy = center.y + lx * sn;
+    return slotRect(cx, cy, lw, lh, pad.rot);
+  });
+}
+
 const inRect = (b, x, y) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
 const inCircle = (b, x, y, pad = 6) => Math.hypot(x - b.x, y - b.y) <= b.r + pad;
 const inZone = (z, x, y) => x >= z.x0 && x < z.x1 && y >= z.y0 && y < z.y1;
@@ -181,8 +227,8 @@ const inZone = (z, x, y) => x >= z.x0 && x < z.x1 && y >= z.y0 && y < z.y1;
 export function createInput(canvas, hooks) {
   const st = {
     W: 1, H: 1, pvp: false, L: layout(1, 1),
-    // per team: { move, aim, actions }
-    ps: [0, 1].map(() => ({ move: null, aim: null, actions: [] })),
+    // per team: { move, aim, btn (a drag that started on BUILD / EDIT), actions }
+    ps: [0, 1].map(() => ({ move: null, aim: null, btn: null, actions: [] })),
     keys: new Set(),
     pressed: null,
     enabled: false,
@@ -206,6 +252,8 @@ export function createInput(canvas, hooks) {
     for (const pad of L.pads) {
       const mode = hooks.mode(pad.team);
       if (inCircle(pad.build, x, y)) return { team: pad.team, btn: "build" };
+      if (inCircle(pad.edit, x, y, 4)) return { team: pad.team, btn: "qedit" };
+      if (inCircle(pad.reset, x, y, 4)) return { team: pad.team, btn: "reset" };
       if (inRect(pad.slot0, x, y)) return { team: pad.team, btn: mode === "combat" ? "slot0" : "edit" };
       if (inRect(pad.slot1, x, y)) return { team: pad.team, btn: mode === "combat" ? "slot1" : "reset" };
     }
@@ -220,7 +268,11 @@ export function createInput(canvas, hooks) {
         hooks.onPause?.();
         break;
       case "build":
-        out.push({ t: "mode", mode: mode === "combat" ? "build" : "combat" });
+        // keyboard / legacy: a quick wall in front
+        out.push({ t: "qbuild", tap: true });
+        break;
+      case "qedit":
+        out.push({ t: "qedit", tap: true });
         break;
       case "edit":
         out.push({ t: "mode", mode: mode === "edit" ? "build" : "edit" });
@@ -264,9 +316,32 @@ export function createInput(canvas, hooks) {
     ev.preventDefault();
     hooks.onFirstTouch?.();
     const { x, y } = point(ev);
+    // between rounds the only things to tap are the buff cards (and pause)
+    if (hooks.cardPhase?.()) {
+      if (inCircle(st.L.pause, x, y)) {
+        hooks.onPause?.();
+        return;
+      }
+      for (const pad of st.L.pads) {
+        cardRects(st.L, pad).forEach((r, i) => {
+          if (inRect(r, x, y)) st.ps[pad.team].actions.push({ t: "card", i });
+        });
+      }
+      return;
+    }
     const hit = buttonAt(x, y);
     if (hit) {
       st.pressed = { id: ev.pointerId, ...hit };
+      // BUILD and EDIT act like mini sticks: tap = quick, drag = aimed
+      if ((hit.btn === "build" || hit.btn === "qedit") && !st.ps[hit.team].btn) {
+        const pad = st.L.pads.find((p) => p.team === hit.team);
+        const b = hit.btn === "build" ? pad.build : pad.edit;
+        try {
+          canvas.setPointerCapture(ev.pointerId);
+        } catch (_) { /* synthetic events can't be captured */ }
+        st.ps[hit.team].btn = { kind: hit.btn, id: ev.pointerId, bx: b.x, by: b.y, x, y, dragged: false };
+        return;
+      }
       press(hit.team, hit.btn);
       return;
     }
@@ -294,8 +369,33 @@ export function createInput(canvas, hooks) {
       const s = st.ps[team];
       if (s.move && s.move.id === id) return { team, kind: "move", stick: s.move };
       if (s.aim && s.aim.id === id) return { team, kind: "aim", stick: s.aim };
+      if (s.btn && s.btn.id === id) return { team, kind: "btn", stick: s.btn };
     }
     return null;
+  }
+
+  // The drag from BUILD / EDIT as { angle, mag } in board directions.
+  function btnVector(team) {
+    const b = st.ps[team].btn;
+    if (!b || !b.dragged) return null;
+    const dx = b.x - b.bx;
+    const dy = b.y - b.by;
+    const reach = st.L.R * 1.6;
+    return { angle: Math.atan2(dy, dx) + (st.L.worldRot || 0), mag: Math.min(1, Math.hypot(dx, dy) / reach) };
+  }
+
+  function releaseBtn(team) {
+    const b = st.ps[team].btn;
+    const t = b.kind === "build" ? "qbuild" : "qedit";
+    const out = st.ps[team].actions;
+    if (!b.dragged) {
+      out.push({ t, tap: true });
+      return;
+    }
+    // dragged back onto the button: cancelled
+    if (Math.hypot(b.x - b.bx, b.y - b.by) < st.L.R * 0.35) return;
+    const v = btnVector(team);
+    out.push({ t, angle: v.angle, mag: v.mag });
   }
 
   function onMove(ev) {
@@ -308,6 +408,7 @@ export function createInput(canvas, hooks) {
     if (f.kind === "aim" && !f.stick.mouse && Math.hypot(x - f.stick.bx, y - f.stick.by) > st.L.R * 0.28) {
       f.stick.dragged = true;
     }
+    if (f.kind === "btn" && Math.hypot(x - f.stick.bx, y - f.stick.by) > st.L.R * 0.4) f.stick.dragged = true;
   }
 
   function onUp(ev) {
@@ -315,6 +416,7 @@ export function createInput(canvas, hooks) {
     const f = findStick(ev.pointerId);
     if (!f) return;
     if (f.kind === "aim" && st.enabled && ev.type !== "pointercancel") release(f.team);
+    if (f.kind === "btn" && st.enabled && ev.type !== "pointercancel") releaseBtn(f.team);
     st.ps[f.team][f.kind] = null;
   }
 
@@ -387,15 +489,10 @@ export function createInput(canvas, hooks) {
     const mode = hooks.mode(0);
     const out = st.ps[0].actions;
     switch (ev.code) {
-      case "KeyB": press(0, "build"); break;
-      case "KeyE":
-        if (mode === "combat") out.push({ t: "mode", mode: "edit" });
-        else press(0, "edit");
-        break;
-      case "KeyR":
-        if (mode === "combat") out.push({ t: "reload" });
-        else press(0, "reset");
-        break;
+      case "KeyB": out.push({ t: "qbuild", tap: true }); break;
+      case "KeyE": out.push({ t: "qedit", tap: true }); break;
+      case "KeyF": press(0, "reset"); break;
+      case "KeyR": out.push({ t: "reload" }); break;
       case "Digit1": out.push({ t: "slot", slot: 0 }); break;
       case "Digit2": out.push({ t: "slot", slot: 1 }); break;
       case "KeyQ": out.push({ t: "swap" }); break;
@@ -416,6 +513,7 @@ export function createInput(canvas, hooks) {
     for (const s of st.ps) {
       s.move = null;
       s.aim = null;
+      s.btn = null;
       s.actions.length = 0;
     }
     st.keys.clear();
@@ -428,8 +526,12 @@ export function createInput(canvas, hooks) {
       const a = aimVector(team);
       const s = st.ps[team];
       const aiming = !!(s.aim && s.aim.dragged && a && a.mag > 0.22);
+      const bv = btnVector(team);
       return {
         mx: m.x, my: m.y,
+        // a live BUILD / EDIT drag, for the placement preview
+        buildAim: bv && s.btn.kind === "build" ? bv : null,
+        editAim: bv && s.btn.kind === "qedit" ? bv : null,
         aiming,
         aimAngle: a ? a.angle : 0,
         aimMag: a ? a.mag : 0,

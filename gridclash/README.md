@@ -39,27 +39,35 @@ app is signed with its own key rather than coming from the Play Store.
 
 | | |
 |---|---|
-| **Left stick** (left half of the screen) | Move. The player walks in whatever direction you push. |
-| **Right stick** (right half) | Drag to aim. A **transparent line shows the shot's trajectory**: where it stops on a wall, red when it will hit the enemy, a dotted arc and blast circle for the grenade launcher. **Release to shoot.** A quick tap fires with auto-aim, and dragging back to the centre cancels. |
-| **BUILD** (the button above the right stick) | Turns the right stick into a **build stick**. A green ghost previews where the wall will land (red if blocked or you're out of mats). Drag to move it and release to drop it. Tap BUILD again (now labelled FIGHT) to go back to shooting. |
-| **EDIT** (in build mode) | Aim at one of your walls and release to cut **one tile** out of it, making a window or door you can shoot and walk through. Release on the open tile again to restore it. Each wall can have one edited tile at a time; editing another tile moves the gap there. |
-| **RESET** (in build mode) | Restores the edit on the wall you're aiming at, or on your nearest edited wall. |
-| **Weapon slots** (top right) | Tap to switch guns. Tap the active one to reload. |
-| **Pause** | Top-right corner, or the Android back button. |
+| **Left stick** | Move. Push where you want to go. |
+| **Right stick** | Drag to aim (a transparent line shows the shot's path), **release to shoot**. Quick tap = auto-aim; drag back to centre = cancel. It always shoots: there's no mode switching. |
+| **BUILD** (above the right stick) | **Tap**: a 3-tile wall drops right in front of you. **Drag from the button**: a ghost of the wall follows your thumb; release to place it, or drag back onto the button to cancel. If the exact spot is blocked (rock, wall, someone standing there), it slides to the nearest spot that fits. The ring round the button shows your materials. |
+| **EDIT** (next to BUILD) | **Tap**: cut a gap (a window or door) in your wall in front of you, or restore it if it's already open. **Drag**: pick which wall tile. One gap per wall at a time. |
+| **↺** | Restore your nearest edited wall. |
+| **Weapon slots** (top right) | Tap to switch guns, tap the active one to reload. |
 
-### 2 Players on one phone (local 1v1)
+Keyboard and mouse (player 1): WASD move · mouse aim + release · B build · E edit · F restore · R reload · 1/2 weapons · Esc pause.
 
-Tap **2 PLAYERS** and the phone switches to portrait. **Blue plays from the bottom end and Red from the top end.** The arena runs between you, with each base at its player's end.
+## Items and buff cards (Grid Clash)
 
-- Each player owns their half of the screen: **left thumb on the move stick, right thumb on the aim stick**, with BUILD above the aim stick.
-- Red's controls, weapon slots / EDIT / RESET, materials, score and banners are flipped 180° so they face Red.
-- Push a stick away from yourself to move or shoot toward the other player.
-- Your health is the coloured strip along your end of the phone. Pause is on the left edge, at mid-screen.
-- On the loadout screen, switch to the **P2 · Red** tab to pick Red's two guns.
-- The menu and bot mode stay in landscape. In a desktop browser window that's wider than it is tall, 2-player puts Blue at the left end and Red at the right instead.
+- **Item pick**: before each match, every player picks their 2 guns on a pick screen. In 2-player mode, each player gets their own panel, and the top one is flipped to face the top player.
+- **Buff cards**: before every round, each player is dealt **3 cards** and keeps **1**. Buffs stack for the rest of the match. Rarities: **Common** (grey), **Rare** (blue), **Epic** (purple), **Legendary** (gold); rarer cards are stronger and less common.
 
-Keyboard and mouse also work in a browser (player 1 only): WASD to move, mouse to aim (release to
-fire), B to build, E to edit, R to reset or reload, 1/2 or Q to switch weapons, Esc to pause.
+| Card | Effect (by rarity) |
+|---|---|
+| Shield | an extra **blue health bar** (+25 / +50 / +75 / +110) that soaks damage first; refilled every round |
+| Damage | +10% / +20% / +32% / +50% damage |
+| Fire rate | +8% / +16% / +26% |
+| Speed | +8% / +15% / +24% move speed |
+| Max health | +15 / +30 / +50 |
+| Reload | 20% / 35% faster |
+| Magazine | +50% / double |
+| Armour | take 10% / 20% / 30% less damage |
+| Lifesteal | heal 15% / 30% of damage dealt |
+| Regen | 2 / 4 HP per second after 3 s without being hit |
+| Builder | +60 mats each round; tougher walls (+50% / +100%); faster material regen |
+
+The bot picks cards too. It prefers rarer cards, and damage and shield cards.
 
 ## Building
 

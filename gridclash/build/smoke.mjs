@@ -1,7 +1,9 @@
-// End-to-end check of the built page in a landscape phone viewport:
-// menu → match, real touch-pointer joysticks (aim/release fires, build mode
-// places a wall, edit cuts and restores a tile), plus fast bot-vs-bot matches
-// to shake out runtime errors. Screenshots land in gridclash/build/shots/.
+// End-to-end check of the local app (Grid Clash) in phone viewports, driven
+// by real touch PointerEvents:
+//   vs bot: item pick → buff card pick → shield → move / aim / fire / cancel →
+//           one-touch building (tap, aimed drag, cancel) → edit / restore → swap
+//   2 players (upright phone): both pick items, both pick cards, both play
+// Screenshots land in gridclash/build/shots/.
 import { chromium } from "playwright";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -12,12 +14,7 @@ const shots = resolve(root, "build/shots");
 mkdirSync(shots, { recursive: true });
 
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || "/opt/pw-browsers/chromium" });
-const ctx = await browser.newContext({
-  viewport: { width: 844, height: 390 },
-  deviceScaleFactor: 2,
-  hasTouch: true,
-  isMobile: true,
-});
+const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
 const page = await ctx.newPage();
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
@@ -32,249 +29,227 @@ const check = (ok, msg) => {
   if (!ok) failures++;
 };
 
-await page.click("#openLoadout");
-await page.waitForTimeout(200);
-await page.screenshot({ path: resolve(shots, "2-loadout.png") });
-check((await page.locator(".gun").count()) >= 10, `armory lists ${await page.locator(".gun").count()} guns`);
-await page.click("#loBack");
-
-await page.click("#play");
-await page.waitForTimeout(100);
-
-// touch helpers: dispatch real PointerEvents of type "touch"
 async function touch(type, id, x, y) {
   await page.evaluate(({ type, id, x, y }) => {
-    const cv = document.getElementById("cv");
-    cv.dispatchEvent(new PointerEvent(type, {
+    document.getElementById("cv").dispatchEvent(new PointerEvent(type, {
       pointerId: id, pointerType: "touch", clientX: x, clientY: y,
       bubbles: true, cancelable: true, isPrimary: id === 1, button: 0,
     }));
   }, { type, id, x, y });
 }
+const tap = async (id, x, y) => {
+  await touch("pointerdown", id, x, y);
+  await touch("pointerup", id, x, y);
+};
 const G = (expr) => page.evaluate(`(() => { const g = window.__clash.game; return ${expr}; })()`);
 const freeze = () => page.evaluate(() => window.__clash.setPaused(true));
 const unfreeze = () => page.evaluate(() => window.__clash.setPaused(false));
 const stepN = (n) => page.evaluate((n) => window.__clash.step(n), n);
+const pads = () => page.evaluate(() => window.__clash.layout.pads.map((p) => ({
+  team: p.team, rot: p.rot, move: p.move, aim: p.aim, build: p.build, edit: p.edit, reset: p.reset,
+  slot0: { x: p.slot0.cx, y: p.slot0.cy }, slot1: { x: p.slot1.cx, y: p.slot1.cy },
+})));
+const cardRects = () => page.evaluate(() => window.__clash.cardRects());
 
-// skip countdown; park the bot so it doesn't interfere with the scripted checks
+// ---------------------------------------------------------------- vs bot
+await page.click("#play");
+await page.waitForTimeout(200);
+check(await page.locator("#select").isVisible(), "PLAY vs BOT opens the item pick screen");
+check((await page.locator("#selP0 .item").count()) === 12, "all 12 items are on the pick screen");
+check((await page.locator("#selP0 .item img").count()) === 12, "every item has a drawn icon");
+await page.click('#selP0 .item[data-id="sniper"]');
+await page.click('#selP0 .item[data-id="smg"]');
+check((await page.locator("#selP0 .item.on").count()) === 2, "picking a third item swaps out the oldest (2 max)");
+await page.screenshot({ path: resolve(shots, "2-item-pick.png") });
+await page.click("#selP0 .sel-ready");
+await page.waitForTimeout(200);
+check(await page.evaluate(() => !!window.__clash.game), "FIGHT starts the match");
+check(JSON.stringify(await G("g.players[0].loadout")) === JSON.stringify(["sniper", "smg"]), "the match uses the picked items");
+
+// buff cards before round 1
 await freeze();
+check((await G("g.state")) === "cards", "a buff-card pick comes before the round");
+check((await G("g.offers[0].length")) === 3, "the player is offered 3 cards");
+await unfreeze();
+await page.waitForTimeout(250);
+await page.screenshot({ path: resolve(shots, "3-cards.png") });
+await freeze();
+const rects = await cardRects();
+await tap(5, rects[0][1].cx, rects[0][1].cy);
+await stepN(1);
+check((await G("g.picks[0]")) === 1, "tapping a card picks it");
+await stepN(60 * 4); // the bot thinks, then the round sets up
+check((await G("g.players[0].cards.length")) === 1 && (await G("g.players[1].cards.length")) === 1, "both players (the bot too) keep one card");
+console.log("     cards:", await G("g.players.map((p) => p.cards.join(','))"));
+
+// park the bot; give player 1 a shield and check it soaks damage first
 await page.evaluate(() => {
   const g = window.__clash.game;
-  g.state = "fight";
   g.controllers[1] = { poll: () => ({ mx: 0, my: 0, aiming: false, actions: [] }) };
+  const p = g.players[0];
+  p.maxShield = 50;
+  p.shield = 50;
+  g.state = "fight";
 });
-
-const L = await page.evaluate(() => {
-  const pad = window.__clash.layout.pads[0];
-  const c = (r) => ({ x: r.cx, y: r.cy });
-  return { W: innerWidth, H: innerHeight, aim: pad.aim, build: pad.build, slot0: c(pad.slot0), slot1: c(pad.slot1) };
-});
-
-// 1. move stick (left half) walks the player right
-const x0 = await G("g.players[0].x");
-await touch("pointerdown", 1, 130, L.H - 110);
-await touch("pointermove", 1, 185, L.H - 110);
-await stepN(40);
-const x1 = await G("g.players[0].x");
-check(x1 > x0 + 1.5, `move joystick walks the player (x ${x0.toFixed(2)} → ${x1.toFixed(2)})`);
-
-// 2. aim stick: drag shows aiming, release fires
-await touch("pointerdown", 2, L.aim.x, L.aim.y);
-await touch("pointermove", 2, L.aim.x + 50, L.aim.y - 6);
-await stepN(2);
-check(await G("g.players[0].aiming"), "dragging the aim stick enters aiming (trajectory line shown)");
-await unfreeze();
-await page.waitForTimeout(120);
-await page.screenshot({ path: resolve(shots, "3-aiming.png") });
-await freeze();
-const shotsBefore = await G("g.players[0].stats.shots");
-await touch("pointerup", 2, L.aim.x + 50, L.aim.y - 6);
-await stepN(30);
-const shotsAfter = await G("g.players[0].stats.shots");
-check(shotsAfter > shotsBefore, `release fires (${shotsAfter - shotsBefore} rounds)`);
-await touch("pointerup", 1, 185, L.H - 110);
-await stepN(20);
-
-// 3. cancel: drag out, come back to centre, release → no shot
-await stepN(60);
-const s0 = await G("g.players[0].stats.shots");
-await touch("pointerdown", 2, L.aim.x, L.aim.y);
-await touch("pointermove", 2, L.aim.x + 50, L.aim.y);
-await touch("pointermove", 2, L.aim.x + 3, L.aim.y);
-await touch("pointerup", 2, L.aim.x + 3, L.aim.y);
-await stepN(20);
-check((await G("g.players[0].stats.shots")) === s0, "dragging back to centre cancels the shot");
-
-// park the player somewhere with open floor ahead
-await page.evaluate(() => { const p = window.__clash.game.players[0]; p.x = 4.5; p.y = 10; p.vx = p.vy = 0; });
-await stepN(1);
-
-// 4. build mode: button over the stick, drag shows preview, release places a 3-tile wall
-await touch("pointerdown", 3, L.build.x, L.build.y);
-await touch("pointerup", 3, L.build.x, L.build.y);
-await stepN(1);
-check((await G("g.players[0].mode")) === "build", "BUILD button switches the attack stick to build");
-const walls0 = await G("g.world.walls.length");
-await touch("pointerdown", 2, L.aim.x, L.aim.y);
-await touch("pointermove", 2, L.aim.x + 30, L.aim.y);
-await stepN(2);
-await unfreeze();
-await page.waitForTimeout(100);
-await page.screenshot({ path: resolve(shots, "4-build-preview.png") });
-await freeze();
-await touch("pointerup", 2, L.aim.x + 30, L.aim.y);
-await stepN(2);
-const walls1 = await G("g.world.walls.length");
-const cells = await G("g.world.walls.at(-1)?.cells.length");
-check(walls1 === walls0 + 1 && cells === 3, `release builds a 3-tile wall (walls ${walls0} → ${walls1})`);
-
-// 5. edit: aim at the wall, release opens one tile; release again restores it
-const { slot0, slot1 } = L;
-await touch("pointerdown", 3, slot0.x, slot0.y);
-await touch("pointerup", 3, slot0.x, slot0.y);
-await stepN(1);
-check((await G("g.players[0].mode")) === "edit", "EDIT button enters edit mode");
-await touch("pointerdown", 2, L.aim.x, L.aim.y);
-await touch("pointermove", 2, L.aim.x + 50, L.aim.y);
-await stepN(2);
-await unfreeze();
-await page.waitForTimeout(100);
-await page.screenshot({ path: resolve(shots, "5-edit-target.png") });
-await freeze();
-await touch("pointerup", 2, L.aim.x + 50, L.aim.y);
-await stepN(2);
-const edit1 = await G("g.world.walls.at(-1).edit");
-check(edit1 >= 0, `edit opens tile #${edit1} of the wall`);
-await unfreeze();
-await page.waitForTimeout(80);
-await page.screenshot({ path: resolve(shots, "6-edited.png") });
-await freeze();
-// RESET restores it
-await touch("pointerdown", 3, slot1.x, slot1.y);
-await touch("pointerup", 3, slot1.x, slot1.y);
-await stepN(2);
-check((await G("g.world.walls.at(-1).edit")) === -1, "RESET restores the edited wall");
-// open again, and editing the same tile toggles it back
-await touch("pointerdown", 2, L.aim.x, L.aim.y);
-await touch("pointermove", 2, L.aim.x + 50, L.aim.y);
-await touch("pointerup", 2, L.aim.x + 50, L.aim.y);
-await stepN(2);
-await touch("pointerdown", 2, L.aim.x, L.aim.y);
-await touch("pointermove", 2, L.aim.x + 50, L.aim.y);
-await touch("pointerup", 2, L.aim.x + 50, L.aim.y);
-await stepN(2);
-check((await G("g.world.walls.at(-1).edit")) === -1, "editing the open tile again restores it");
-
-// back to combat
-await touch("pointerdown", 3, L.build.x, L.build.y);
-await touch("pointerup", 3, L.build.x, L.build.y);
-await stepN(1);
-check((await G("g.players[0].mode")) === "combat", "BUILD button again returns to combat");
-
-// 6. tapping a weapon slot swaps
-const slotCombat1 = slot1;
-await touch("pointerdown", 3, slotCombat1.x, slotCombat1.y);
-await touch("pointerup", 3, slotCombat1.x, slotCombat1.y);
-await stepN(1);
-check((await G("g.players[0].slot")) === 1, "tapping slot 2 switches weapon");
-
-
-// 7b. local PvP on one phone: each player drives their own half
-await page.setViewportSize({ width: 390, height: 844 });
-await page.evaluate(() => window.__clash.startMatch("pvp"));
-await freeze();
-await page.evaluate(() => { window.__clash.game.state = "fight"; });
-const P = await page.evaluate(() => window.__clash.layout.pads.map((p) => ({
-  move: p.move, aim: p.aim, build: p.build, slot0: { x: p.slot0.cx, y: p.slot0.cy }, rot: p.rot,
-})));
-check(P.length === 2, "PvP layout has a control pad for each player");
-check(await page.evaluate(() => window.__clash.layout.portrait === true && window.__clash.layout.pads[1].rot === Math.PI),
-  "upright phone: Blue's controls at the bottom, Red's at the top flipped to face them");
-check(P[0].aim.y > 600 && P[1].aim.y < 244, "each player's sticks are at their own end of the phone");
-// "forward" on screen for each player = away from their own end
-const F = P.map((p) => ({ x: Math.round(Math.sin(p.rot) * 45), y: Math.round(-Math.cos(p.rot) * 45) }));
-const pos = () => G("g.players.map((p) => [p.x, p.y])");
-const before = await pos();
-// Blue: move stick top-left pushes right; Red: move stick bottom-right pushes left
-await touch("pointerdown", 11, P[0].move.x, P[0].move.y);
-await touch("pointermove", 11, P[0].move.x + F[0].x, P[0].move.y + F[0].y);
-await touch("pointerdown", 12, P[1].move.x, P[1].move.y);
-await touch("pointermove", 12, P[1].move.x + F[1].x, P[1].move.y + F[1].y);
-await stepN(30);
-const after = await pos();
-check(after[0][0] > before[0][0] + 1 && after[1][0] < before[1][0] - 1,
-  `both players move at once (blue x ${before[0][0].toFixed(1)}→${after[0][0].toFixed(1)}, red x ${before[1][0].toFixed(1)}→${after[1][0].toFixed(1)})`);
-// both aim at the same time, screenshot, then release
-await touch("pointerdown", 13, P[0].aim.x, P[0].aim.y);
-await touch("pointermove", 13, P[0].aim.x + F[0].x, P[0].aim.y + F[0].y);
-await touch("pointerdown", 14, P[1].aim.x, P[1].aim.y);
-await touch("pointermove", 14, P[1].aim.x + F[1].x, P[1].aim.y + F[1].y);
-await stepN(2);
-check(await G("g.players[0].aiming && g.players[1].aiming"), "both players aim simultaneously");
-await unfreeze();
-await page.waitForTimeout(120);
-await page.screenshot({ path: resolve(shots, "9-pvp-aiming.png") });
-await freeze();
-const shots0 = await G("g.players.map((p) => p.stats.shots)");
-await touch("pointerup", 13, P[0].aim.x + F[0].x, P[0].aim.y + F[0].y);
-await touch("pointerup", 14, P[1].aim.x + F[1].x, P[1].aim.y + F[1].y);
-await stepN(30);
-const shots1 = await G("g.players.map((p) => p.stats.shots)");
-check(shots1[0] > shots0[0] && shots1[1] > shots0[1], `both players fire on release (blue +${shots1[0] - shots0[0]}, red +${shots1[1] - shots0[1]})`);
-await touch("pointerup", 11, P[0].move.x + F[0].x, P[0].move.y + F[0].y);
-await touch("pointerup", 12, P[1].move.x + F[1].x, P[1].move.y + F[1].y);
-// Red builds with their own BUILD button + stick
-await page.evaluate(() => { const p = window.__clash.game.players[1]; p.x = 25.5; p.y = 10; p.vx = p.vy = 0; });
-await stepN(1);
-await touch("pointerdown", 15, P[1].build.x, P[1].build.y);
-await touch("pointerup", 15, P[1].build.x, P[1].build.y);
-await stepN(1);
-check((await G("g.players[1].mode")) === "build" && (await G("g.players[0].mode")) === "combat", "Red's BUILD button only switches Red");
-const wallsP = await G("g.world.walls.length");
-await touch("pointerdown", 16, P[1].aim.x, P[1].aim.y);
-await touch("pointermove", 16, P[1].aim.x + F[1].x * 0.66, P[1].aim.y + F[1].y * 0.66);
-await stepN(2);
-await unfreeze();
-await page.waitForTimeout(100);
-await page.screenshot({ path: resolve(shots, "10-pvp-red-build.png") });
-await freeze();
-await touch("pointerup", 16, P[1].aim.x + F[1].x * 0.66, P[1].aim.y + F[1].y * 0.66);
-await stepN(2);
-check((await G("g.world.walls.length")) === wallsP + 1 && (await G("g.world.walls.at(-1).owner")) === 1, "Red places a wall with their own stick");
-// Red's slot button (in build mode = EDIT) belongs to Red
-await touch("pointerdown", 17, P[1].slot0.x, P[1].slot0.y);
-await touch("pointerup", 17, P[1].slot0.x, P[1].slot0.y);
-await stepN(1);
-check((await G("g.players[1].mode")) === "edit", "Red's EDIT button works");
-check(await G("g.controllers[1].poll !== undefined && window.__clash.mode === 'pvp'"), "player 2 is human-controlled (no bot) in PvP");
-check(!(await page.locator("#rotate").isVisible()), "no 'rotate your phone' overlay during upright 2-player");
-// both players' shots head toward each other: Blue's bullets travel +x, Red's -x
-await page.setViewportSize({ width: 844, height: 390 });
-
-// 7. live play against the real bot, screenshot mid-fight
+const hp0 = await G("g.players[0].hp");
 await page.evaluate(() => {
-  window.__clash.settings.loadout = ["ar", "grenade"];
-  window.__clash.startMatch("bot");
+  const g = window.__clash.game;
+  g.bullets.push({ kind: "bullet", owner: 1, def: g.players[1].guns[0].def, x: g.players[0].x - 1.2, y: g.players[0].y, px: 0, py: 0, dx: 1, dy: 0, speed: 30, left: 3, dmg: 20, age: 0 });
 });
-await page.waitForTimeout(5500);
-await touch("pointerdown", 2, L.aim.x, L.aim.y);
-await touch("pointermove", 2, L.aim.x + 55, L.aim.y - 4);
-await page.waitForTimeout(60);
-await page.evaluate(() => window.__clash.game.players[0].slot === 0 && null);
-await page.screenshot({ path: resolve(shots, "7-fight.png") });
-await touch("pointerup", 2, L.aim.x + 55, L.aim.y - 4);
+await stepN(20);
+check((await G("g.players[0].shield")) < 50 && (await G("g.players[0].hp")) === hp0, "damage hits the blue shield before health");
 
-// 8. the results screen
+// move
+const P = (await pads())[0];
+const x0 = await G("g.players[0].x");
+await touch("pointerdown", 1, P.move.x, P.move.y);
+await touch("pointermove", 1, P.move.x + 55, P.move.y);
+await stepN(40);
+await touch("pointerup", 1, P.move.x + 55, P.move.y);
+const x1 = await G("g.players[0].x");
+check(x1 > x0 + 1.5, `move stick walks the player (x ${x0.toFixed(2)} → ${x1.toFixed(2)})`);
+
+// aim + fire, cancel
+await stepN(80);
+await touch("pointerdown", 2, P.aim.x, P.aim.y);
+await touch("pointermove", 2, P.aim.x + 50, P.aim.y - 6);
+await stepN(2);
+check(await G("g.players[0].aiming"), "aim stick shows the aim line");
+const s0 = await G("g.players[0].stats.shots");
+await touch("pointerup", 2, P.aim.x + 50, P.aim.y - 6);
+await stepN(40);
+check((await G("g.players[0].stats.shots")) > s0, "release fires");
+await stepN(120);
+const s1 = await G("g.players[0].stats.shots");
+await touch("pointerdown", 2, P.aim.x, P.aim.y);
+await touch("pointermove", 2, P.aim.x + 50, P.aim.y);
+await touch("pointermove", 2, P.aim.x + 3, P.aim.y);
+await touch("pointerup", 2, P.aim.x + 3, P.aim.y);
+await stepN(20);
+check((await G("g.players[0].stats.shots")) === s1, "dragging back to centre cancels");
+
+// one-touch building
+await page.evaluate(() => {
+  const p = window.__clash.game.players[0];
+  p.x = 4.5; p.y = 10; p.vx = p.vy = 0; p.facing = 0; p.mats = 300;
+});
+await stepN(1);
+const w0 = await G("g.world.walls.length");
+await tap(3, P.build.x, P.build.y);
+await stepN(2);
+const w1 = await G("g.world.walls.length");
+check(w1 === w0 + 1 && (await G("g.players[0].mode")) === "combat", "tap BUILD: a wall drops in front, no mode switch");
+console.log("     quick wall at", await G("g.world.walls.at(-1).cells.map((c) => c.x + ',' + c.y).join(' ')"));
+// aimed: drag up from BUILD
+await touch("pointerdown", 3, P.build.x, P.build.y);
+await touch("pointermove", 3, P.build.x, P.build.y - 70);
+await stepN(2);
+check(!!(await G("g.players[0].buildAim")), "dragging from BUILD shows a placement preview");
+await unfreeze();
+await page.waitForTimeout(120);
+await page.screenshot({ path: resolve(shots, "4-build-drag.png") });
+await freeze();
+await touch("pointerup", 3, P.build.x, P.build.y - 70);
+await stepN(2);
+check((await G("g.world.walls.length")) === w1 + 1 && (await G("g.world.walls.at(-1).vertical")) === false, "release places the aimed wall (across the drag)");
+// cancel
+await touch("pointerdown", 3, P.build.x, P.build.y);
+await touch("pointermove", 3, P.build.x - 80, P.build.y);
+await touch("pointermove", 3, P.build.x + 4, P.build.y);
+await touch("pointerup", 3, P.build.x + 4, P.build.y);
+await stepN(2);
+check((await G("g.world.walls.length")) === w1 + 1, "dragging back onto BUILD cancels");
+
+// edit: tap EDIT cuts the wall in front; ↺ restores; drag picks a wall
+await page.evaluate(() => { window.__clash.game.players[0].facing = 0; });
+await tap(4, P.edit.x, P.edit.y);
+await stepN(2);
+check((await G("g.world.walls.filter((w) => w.edit >= 0).length")) === 1, "tap EDIT cuts a gap in your wall in front");
+await unfreeze();
+await page.waitForTimeout(100);
+await page.screenshot({ path: resolve(shots, "5-edited.png") });
+await freeze();
+await tap(6, P.reset.x, P.reset.y);
+await stepN(2);
+check((await G("g.world.walls.filter((w) => w.edit >= 0).length")) === 0, "↺ restores the edit");
+await touch("pointerdown", 4, P.edit.x, P.edit.y);
+await touch("pointermove", 4, P.edit.x, P.edit.y - 70);
+await stepN(1);
+await touch("pointerup", 4, P.edit.x, P.edit.y - 70);
+await stepN(2);
+check((await G("g.world.walls.filter((w) => w.edit >= 0).length")) === 1, "drag from EDIT picks which wall to cut");
+
+// weapons are always one tap away
+await tap(7, P.slot1.x, P.slot1.y);
+await stepN(1);
+check((await G("g.players[0].slot")) === 1, "weapon slot 2 switches gun");
+await unfreeze();
+await page.waitForTimeout(300);
+await page.screenshot({ path: resolve(shots, "6-fight.png") });
+
+// a stretch of real play against the bot, then the results screen
+await page.evaluate(() => window.__clash.startMatch("bot"));
+await page.waitForTimeout(400);
+for (let i = 0; i < 40 && (await G("g.state")) !== "fight"; i++) {
+  if ((await G("g.state")) === "cards" && (await G("g.picks[0]")) < 0) {
+    const r = await cardRects();
+    await tap(9, r[0][0].cx, r[0][0].cy);
+  }
+  await page.waitForTimeout(250);
+}
+await page.waitForTimeout(2500);
+await page.screenshot({ path: resolve(shots, "7-fight-live.png") });
 await page.evaluate(() => {
   const g = window.__clash.game;
   g.score = [2, 1];
-  g.state = "fight";
   g.players[1].hp = 1;
-  g.bullets.push({ kind: "bullet", owner: 0, def: g.players[0].guns[0].def, x: g.players[1].x - 1, y: g.players[1].y, px: 0, py: 0, dx: 1, dy: 0, speed: 30, left: 3, dmg: 50, age: 0 });
+  g.players[1].shield = 0;
+  g.bullets.push({ kind: "bullet", owner: 0, def: g.players[0].guns[0].def, x: g.players[1].x - 0.3, y: g.players[1].y, px: 0, py: 0, dx: 1, dy: 0, speed: 30, left: 3, dmg: 50, age: 0 });
 });
 await page.waitForTimeout(4500);
+console.log("     state:", await G("g.state + ' score ' + g.score.join('-') + ' hp ' + g.players.map((p) => p.hp).join('/') + ' round ' + g.round"));
 check(await page.locator("#results").isVisible(), "match end shows the results screen");
 await page.screenshot({ path: resolve(shots, "8-results.png") });
+
+// ---------------------------------------------------------------- 2 players, upright phone
+await page.click("#toMenu");
+await page.setViewportSize({ width: 390, height: 844 });
+await page.evaluate(() => document.getElementById("pvp").click());
+await page.waitForTimeout(250);
+check(await page.locator("#select").isVisible() && (await page.locator(".sel-panel .item").count()) === 24, "2 PLAYERS: both players get an item panel");
+const topTransform = await page.evaluate(() => getComputedStyle(document.getElementById("selP1")).transform);
+check(topTransform !== "none", "player 2's panel is flipped to face the top end");
+for (const id of ["shotgun", "rocket"]) await page.click(`#selP0 .item[data-id="${id}"]`);
+for (const id of ["minigun", "rail"]) await page.click(`#selP1 .item[data-id="${id}"]`);
+await page.screenshot({ path: resolve(shots, "9-pvp-item-pick.png") });
+await page.click("#selP0 .sel-ready");
+check(!(await page.evaluate(() => window.__clash.mode === "pvp" && !!window.__clash.game)), "the match waits until both players are ready");
+await page.click("#selP1 .sel-ready");
+await page.waitForTimeout(200);
+check(await page.evaluate(() => window.__clash.mode === "pvp" && !!window.__clash.game), "both ready: the 2-player match starts");
+const los = await G("g.players.map((p) => [...p.loadout].sort().join('+')).join(' | ')");
+check(los === "rocket+shotgun | minigun+rail", `each player gets their own items (${los})`);
+await freeze();
+check((await G("g.state")) === "cards", "2 players: card pick before the round");
+await unfreeze();
+await page.waitForTimeout(250);
+await page.screenshot({ path: resolve(shots, "10-pvp-cards.png") });
+await freeze();
+const prs = await cardRects();
+await tap(11, prs[0][1].cx, prs[0][1].cy);
+await stepN(1);
+check((await G("g.picks[0]")) === 1 && (await G("g.picks[1]")) === -1, "Blue picks; Red is still choosing");
+await tap(12, prs[1][2].cx, prs[1][2].cy);
+await stepN(1);
+check((await G("g.state")) === "countdown" && (await G("g.players[1].cards.length")) === 1, "Red picks; the round starts");
+await stepN(200);
+const PP = await pads();
+await tap(13, PP[1].build.x, PP[1].build.y);
+await stepN(2);
+check((await G("g.world.walls.filter((w) => w.owner === 1).length")) === 1, "Red's BUILD tap builds for Red");
+await unfreeze();
+await page.waitForTimeout(300);
+await page.screenshot({ path: resolve(shots, "11-pvp-fight.png") });
 
 check(errors.length === 0, `no page errors${errors.length ? ": " + errors.slice(0, 3).join(" | ") : ""}`);
 await browser.close();

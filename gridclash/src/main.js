@@ -2,7 +2,7 @@ import "./styles.css";
 import { GUNS, GUN_BY_ID, TIER_COLOR, gunStats } from "./guns.js";
 import { createGame, step } from "./game.js";
 import { createBot } from "./bot.js";
-import { createInput } from "./input.js";
+import { createInput, cardRects } from "./input.js";
 import { createRenderer } from "./render.js";
 import { unlockAudio, playEvents, uiClick, audio } from "./audio.js";
 import { load, save } from "./storage.js";
@@ -15,6 +15,7 @@ import { createHost, joinRoom, normalizeCode, encodeWalls, MODES, PIN_LENGTH, te
 const APP = typeof __APP__ !== "undefined" ? __APP__ : "local";
 const IS_ONLINE_APP = APP === "online";
 import { createRemoteController, createHostSync, createGuestView } from "./online.js";
+import { gunIconURL } from "./art.js";
 
 const ME = 0;
 const NAMES_BOT = ["YOU", "BOT"];
@@ -63,7 +64,7 @@ app.innerHTML = `
           ${DIFFS.map((d) => `<button data-d="${d}">${d}</button>`).join("")}
         </div>
       </div>
-      <div class="row">
+      <div class="row${IS_ONLINE_APP ? "" : " hidden"}">
         <span class="lbl">Loadout</span>
         <button class="btn loadout-btn" id="openLoadout"></button>
       </div>
@@ -88,6 +89,14 @@ app.innerHTML = `
       <span class="lo-hint">Pick a slot, then a gun</span>
     </div>
     <div class="gun-grid" id="gunGrid"></div>
+  </section>
+
+  <section id="select" class="screen hidden">
+    <div class="sel-wrap" id="selWrap">
+      <div class="sel-panel" id="selP1" data-p="1"></div>
+      <div class="sel-panel" id="selP0" data-p="0"></div>
+    </div>
+    <button class="btn ghost small sel-back" id="selBack">‹ Menu</button>
   </section>
 
   <section id="online-screen" class="screen hidden">
@@ -174,7 +183,7 @@ app.innerHTML = `
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("cv");
-const screens = ["menu", "loadout", "help", "pause", "results", "online-screen", "lobby"];
+const screens = ["menu", "loadout", "help", "pause", "results", "online-screen", "lobby", "select"];
 function show(name) {
   for (const s of screens) $(s).classList.toggle("hidden", s !== name);
   input.st.enabled = name === null && !!game;
@@ -200,11 +209,101 @@ $("diff").addEventListener("click", (e) => {
 });
 $("play")?.addEventListener("click", () => {
   click();
-  startMatch("bot");
+  openSelect("bot");
 });
 $("pvp")?.addEventListener("click", () => {
   click();
-  startMatch("pvp");
+  openSelect("pvp");
+});
+
+// ---- item pick (local app): each player chooses 2 guns before the match ------
+
+const sel = { mode: "bot", picks: [[], []], ready: [false, false], focus: [null, null] };
+
+function openSelect(mode) {
+  sel.mode = mode;
+  sel.picks = [settings.loadout.slice(), settings.loadout2.slice()];
+  sel.ready = [false, mode !== "pvp"]; // vs bot: only player 1 picks
+  sel.focus = [sel.picks[0][0], sel.picks[1][0]];
+  setOrientation(mode === "pvp" ? "portrait" : "landscape");
+  input.setPvp(false);
+  resize();
+  $("selWrap").className = "sel-wrap " + (mode === "pvp" ? "two" : "one");
+  renderSelect();
+  show("select");
+}
+
+function renderSelect() {
+  for (const pl of [0, 1]) {
+    const el = $(pl === 0 ? "selP0" : "selP1");
+    if (sel.mode !== "pvp" && pl === 1) {
+      el.innerHTML = "";
+      continue;
+    }
+    const picks = sel.picks[pl];
+    const ready = sel.ready[pl];
+    const who = sel.mode === "pvp" ? (pl === 0 ? "PLAYER 1 · BLUE" : "PLAYER 2 · RED") : "YOUR ITEMS";
+    const f = GUN_BY_ID[sel.focus[pl]] || GUN_BY_ID[picks[0]];
+    el.innerHTML = `
+      <div class="sel-head t${pl}">
+        <b>${who}</b><span>${ready ? "Ready ✓" : `Pick 2 items · ${picks.length}/2`}</span>
+      </div>
+      <div class="sel-grid">
+        ${GUNS.map((g) => {
+          const k = picks.indexOf(g.id);
+          return `<button class="item${k >= 0 ? " on" : ""}" data-p="${pl}" data-id="${g.id}" style="--c:${TIER_COLOR[g.tier]}">
+            <img src="${gunIconURL(g.id)}" alt="" draggable="false" />
+            <b>${g.name}</b>
+            ${k >= 0 ? `<i>${k + 1}</i>` : ""}
+          </button>`;
+        }).join("")}
+      </div>
+      <div class="sel-foot">
+        <p class="sel-desc">${f ? `<b style="color:${TIER_COLOR[f.tier]}">${f.tier} ${f.name}</b> — ${f.desc}` : ""}</p>
+        <button class="btn ${ready ? "" : "primary"} sel-ready" data-p="${pl}" ${picks.length === 2 ? "" : "disabled"}>${ready ? "Change" : sel.mode === "pvp" ? "READY" : "FIGHT ▶"}</button>
+      </div>`;
+  }
+}
+
+$("selWrap").addEventListener("click", (e) => {
+  const item = e.target.closest(".item");
+  const readyBtn = e.target.closest(".sel-ready");
+  if (item) {
+    const pl = Number(item.dataset.p);
+    const id = item.dataset.id;
+    const picks = sel.picks[pl];
+    const k = picks.indexOf(id);
+    if (k >= 0) picks.splice(k, 1);
+    else {
+      if (picks.length >= 2) picks.shift();
+      picks.push(id);
+    }
+    sel.focus[pl] = id;
+    sel.ready[pl] = false;
+    click();
+    renderSelect();
+    return;
+  }
+  if (readyBtn && !readyBtn.disabled) {
+    const pl = Number(readyBtn.dataset.p);
+    sel.ready[pl] = !sel.ready[pl];
+    click();
+    if (sel.ready.every(Boolean)) {
+      settings.loadout = sel.picks[0].slice();
+      save("loadout", settings.loadout);
+      if (sel.mode === "pvp") {
+        settings.loadout2 = sel.picks[1].slice();
+        save("loadout2", settings.loadout2);
+      }
+      startMatch(sel.mode);
+      return;
+    }
+    renderSelect();
+  }
+});
+$("selBack").addEventListener("click", () => {
+  click();
+  toMenu();
 });
 $("online")?.addEventListener("click", () => {
   click();
@@ -251,7 +350,7 @@ function renderLoadout() {
     const idx = editList().indexOf(g.id);
     const bar = (n, v) => `<div class="stat"><span>${n}</span><b><i style="width:${Math.round(v * 100)}%"></i></b></div>`;
     return `<button class="gun ${idx >= 0 ? "equipped" : ""}" data-id="${g.id}" style="--c:${TIER_COLOR[g.tier]};--g:${g.color}">
-      <div class="gun-top"><span class="swatch"></span><span class="gname">${g.name}</span>${idx >= 0 ? `<span class="badge">${idx + 1}</span>` : ""}</div>
+      <div class="gun-top"><img class="gicon" src="${gunIconURL(g.id)}" alt="" /><span class="gname">${g.name}</span>${idx >= 0 ? `<span class="badge">${idx + 1}</span>` : ""}</div>
       <div class="tier">${g.tier} · ${g.type === "lob" ? "explosive lob" : g.type === "rocket" ? "explosive" : g.type === "rail" ? "piercing beam" : g.pellets > 1 ? `${g.pellets} pellets` : g.burst > 1 ? `${g.burst}-round burst` : "single shot"}</div>
       ${bar("DMG", s.damage)}${bar("DPS", s.rate)}${bar("RNG", s.range)}${bar("BLD", s.builds)}
       <p>${g.desc}</p>
@@ -414,6 +513,7 @@ const input = createInput(canvas, {
   tileSize: () => renderer.v.TS,
   onPause: pause,
   onFirstTouch: unlockAudio,
+  cardPhase: () => !!game && game.state === "cards" && !online(),
 });
 
 function click() {
@@ -451,6 +551,8 @@ function startMatch(mode = matchMode) {
     controllers: mode === "pvp"
       ? [input.controllers[0], input.controllers[1]]
       : [input.controllers[0], createBot(settings.difficulty)],
+    // the local app deals buff cards before every round
+    cards: !IS_ONLINE_APP,
   });
   paused = false;
   show(null);
@@ -815,6 +917,7 @@ requestAnimationFrame(frame);
 window.__clash = {
   get game() { return game; },
   get layout() { return input.st.L; },
+  cardRects: () => input.st.L.pads.map((pad) => cardRects(input.st.L, pad)),
   get mode() { return matchMode; },
   get local() { return local; },
   get net() { return { host, guest, guestView }; },

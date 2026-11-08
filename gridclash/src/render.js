@@ -1,7 +1,10 @@
 // Canvas renderer: arena, builds, players, projectiles, previews and HUD.
 
 import { GW, GH, WALL_COST, isRock } from "./world.js";
-import { gunOf, enemyOf, traceShot, buildPreview, editPreview, nearestEditedWall, MAX_HP, MAX_MATS } from "./game.js";
+import { gunOf, enemyOf, traceShot, buildPreview, editPreview, quickEditTarget, nearestEditedWall, MAX_HP, MAX_MATS, magOf } from "./game.js";
+import { drawGun, drawCardIcon, GUN_LEN } from "./art.js";
+import { CARD_BY_ID, RARITIES } from "./cards.js";
+import { cardRects } from "./input.js";
 import { TIER_COLOR } from "./guns.js";
 
 export const TEAM = [
@@ -135,73 +138,171 @@ export function createRenderer(canvas) {
 
   // ---- world ----------------------------------------------------------------
 
+  // hex colour × k (k < 1 darker, > 1 lighter)
+  function shade(hex, k) {
+    const n = parseInt(hex.slice(1), 16);
+    const f = (c) => Math.max(0, Math.min(255, Math.round(c * k)));
+    return `rgb(${f((n >> 16) & 255)},${f((n >> 8) & 255)},${f(n & 255)})`;
+  }
+
+  // Walls are drawn as raised wooden blocks: a front face (height) and a top
+  // face with planks running along the wall, team-coloured trim on the wall's
+  // outer edges, corner bolts, and cracks as they take damage. An edited tile
+  // becomes a doorway with frame posts.
   function drawWalls(g) {
     const TS = v.TS;
+    const lift = TS * 0.3;
+    const tiles = [];
+    const gaps = [];
     for (const wall of g.world.walls) {
-      const col = TEAM[wall.team];
-      const k = Math.min(1, (g.time - wall.born) / 0.22);
-      const s = k < 1 ? Math.max(0.05, easeOutBack(k)) : 1;
-      // drop-in: the wall "lands" from slightly above
-      const drop = (1 - Math.min(1, k * 1.4)) * TS * 0.6;
+      const k = Math.min(1, (g.time - wall.born) / 0.24);
+      const rise = k < 1 ? Math.max(0.05, easeOutBack(k)) : 1;
+      const drop = (1 - Math.min(1, k * 1.5)) * TS * 0.9;
+      const solid = (i) => i >= 0 && i < wall.cells.length && wall.cells[i].alive && wall.edit !== i;
       wall.cells.forEach((c, i) => {
         if (!c.alive) return;
-        const x = sx(c.x);
-        const y = sy(c.y) - drop;
-        if (wall.edit === i) {
-          ctx.fillStyle = "rgba(255,255,255,0.05)";
-          ctx.fillRect(x + 2, y + 2, TS - 4, TS - 4);
-          ctx.setLineDash([TS * 0.18, TS * 0.12]);
-          ctx.strokeStyle = col.light;
-          ctx.globalAlpha = 0.7;
-          ctx.lineWidth = Math.max(1, TS * 0.07);
-          ctx.strokeRect(x + TS * 0.1, y + TS * 0.1, TS * 0.8, TS * 0.8);
-          ctx.setLineDash([]);
-          ctx.globalAlpha = 1;
-          return;
-        }
-        const w = TS * s;
-        const cx = x + TS / 2;
-        const cy = y + TS / 2;
-        const hpk = c.hp / 150;
-        ctx.fillStyle = "rgba(0,0,0,0.35)";
-        ctx.fillRect(cx - w / 2 + TS * 0.06, cy - w / 2 + TS * 0.14, w, w);
-        ctx.fillStyle = col.wall;
-        ctx.fillRect(cx - w / 2, cy - w / 2, w, w);
+        if (wall.edit === i) gaps.push({ wall, c, i });
+        else tiles.push({ wall, c, i, rise, drop, prev: solid(i - 1), next: solid(i + 1) });
+      });
+    }
+    tiles.sort((a, b) => a.c.y - b.c.y);
+
+    // doorways first (they're on the floor)
+    for (const { wall, c } of gaps) {
+      const col = TEAM[wall.team];
+      const x = sx(c.x);
+      const y = sy(c.y);
+      ctx.fillStyle = "rgba(255,255,255,0.05)";
+      ctx.fillRect(x + 2, y + 2, TS - 4, TS - 4);
+      ctx.setLineDash([TS * 0.16, TS * 0.12]);
+      ctx.strokeStyle = col.light;
+      ctx.globalAlpha = 0.55;
+      ctx.lineWidth = Math.max(1, TS * 0.06);
+      ctx.strokeRect(x + TS * 0.12, y + TS * 0.12, TS * 0.76, TS * 0.76);
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+      // frame posts at both ends of the opening
+      const post = TS * 0.16;
+      const posts = wall.vertical
+        ? [[x + TS * 0.2, y], [x + TS * 0.2, y + TS - post]]
+        : [[x, y + TS * 0.2], [x + TS - post, y + TS * 0.2]];
+      for (const [px, py] of posts) {
+        const pw = wall.vertical ? TS * 0.6 : post;
+        const ph = wall.vertical ? post : TS * 0.6;
+        ctx.fillStyle = shade(col.wall, 0.55);
+        ctx.fillRect(px, py + ph - lift * 0.6, pw, lift * 0.6);
         ctx.fillStyle = col.wallHi;
-        ctx.fillRect(cx - w / 2, cy - w / 2, w, w * 0.16);
-        // planks run along the wall
-        ctx.strokeStyle = "rgba(0,0,0,0.28)";
+        ctx.fillRect(px, py - lift * 0.6, pw, ph);
+      }
+    }
+
+    // ground shadows
+    ctx.fillStyle = "rgba(0,0,0,0.32)";
+    for (const t of tiles) ctx.fillRect(sx(t.c.x) + TS * 0.14, sy(t.c.y) + TS * 0.12, TS, TS * 0.92);
+
+    for (const t of tiles) {
+      const { wall, c, rise, drop } = t;
+      const col = TEAM[wall.team];
+      const hpk = Math.max(0, c.hp / (c.max || 150));
+      const x0 = sx(c.x);
+      const y0 = sy(c.y) - drop;
+      ctx.save();
+      if (rise !== 1) {
+        ctx.translate(x0 + TS / 2, y0 + TS / 2);
+        ctx.scale(rise, rise);
+        ctx.translate(-(x0 + TS / 2), -(y0 + TS / 2));
+      }
+      const dim = 0.72 + 0.28 * hpk; // battered walls darken
+      // front face (gives the block height)
+      ctx.fillStyle = shade(col.wall, 0.55 * dim);
+      ctx.fillRect(x0, y0 + TS - lift, TS, lift);
+      ctx.strokeStyle = "rgba(0,0,0,0.35)";
+      ctx.lineWidth = Math.max(1, TS * 0.03);
+      ctx.beginPath();
+      for (let q = 1; q < 4; q++) {
+        ctx.moveTo(x0 + (TS * q) / 4, y0 + TS - lift);
+        ctx.lineTo(x0 + (TS * q) / 4, y0 + TS);
+      }
+      ctx.stroke();
+      ctx.fillStyle = "rgba(0,0,0,0.45)";
+      ctx.fillRect(x0, y0 + TS - Math.max(1, TS * 0.04), TS, Math.max(1, TS * 0.04));
+
+      // top face
+      const ty = y0 - lift;
+      ctx.fillStyle = shade(col.wall, dim);
+      ctx.fillRect(x0, ty, TS, TS);
+      // planks along the wall
+      ctx.strokeStyle = "rgba(0,0,0,0.3)";
+      ctx.lineWidth = Math.max(1, TS * 0.035);
+      ctx.beginPath();
+      for (let q = 1; q < 3; q++) {
+        if (wall.vertical) {
+          ctx.moveTo(x0 + (TS * q) / 3, ty);
+          ctx.lineTo(x0 + (TS * q) / 3, ty + TS);
+        } else {
+          ctx.moveTo(x0, ty + (TS * q) / 3);
+          ctx.lineTo(x0 + TS, ty + (TS * q) / 3);
+        }
+      }
+      ctx.stroke();
+      // wood grain highlight
+      ctx.fillStyle = "rgba(255,255,255,0.12)";
+      if (wall.vertical) ctx.fillRect(x0 + TS * 0.06, ty, TS * 0.06, TS);
+      else ctx.fillRect(x0, ty + TS * 0.06, TS, TS * 0.06);
+      // team trim on the wall's outer edges only, so 3 tiles read as one wall
+      const tw = Math.max(1.5, TS * 0.08);
+      ctx.fillStyle = col.main;
+      if (wall.vertical) {
+        ctx.fillRect(x0, ty, tw, TS);
+        ctx.fillRect(x0 + TS - tw, ty, tw, TS);
+        if (!t.prev) ctx.fillRect(x0, ty, TS, tw);
+        if (!t.next) ctx.fillRect(x0, ty + TS - tw, TS, tw);
+      } else {
+        ctx.fillRect(x0, ty, TS, tw);
+        ctx.fillRect(x0, ty + TS - tw, TS, tw);
+        if (!t.prev) ctx.fillRect(x0, ty, tw, TS);
+        if (!t.next) ctx.fillRect(x0 + TS - tw, ty, tw, TS);
+      }
+      // bolts at the wall's ends
+      ctx.fillStyle = "rgba(230,235,245,0.8)";
+      const bolt = (bx, by) => {
+        ctx.beginPath();
+        ctx.arc(bx, by, Math.max(1, TS * 0.05), 0, Math.PI * 2);
+        ctx.fill();
+      };
+      const e = TS * 0.2;
+      if (!t.prev) {
+        if (wall.vertical) { bolt(x0 + e, ty + e); bolt(x0 + TS - e, ty + e); } else { bolt(x0 + e, ty + e); bolt(x0 + e, ty + TS - e); }
+      }
+      if (!t.next) {
+        if (wall.vertical) { bolt(x0 + e, ty + TS - e); bolt(x0 + TS - e, ty + TS - e); } else { bolt(x0 + TS - e, ty + e); bolt(x0 + TS - e, ty + TS - e); }
+      }
+      // damage
+      if (hpk < 0.75) {
+        ctx.strokeStyle = `rgba(10,10,15,${Math.min(0.9, 1 - hpk)})`;
         ctx.lineWidth = Math.max(1, TS * 0.05);
         ctx.beginPath();
-        for (let q = 1; q < 3; q++) {
-          if (wall.vertical) {
-            ctx.moveTo(cx - w / 2 + (w * q) / 3, cy - w / 2);
-            ctx.lineTo(cx - w / 2 + (w * q) / 3, cy + w / 2);
-          } else {
-            ctx.moveTo(cx - w / 2, cy - w / 2 + (w * q) / 3);
-            ctx.lineTo(cx + w / 2, cy - w / 2 + (w * q) / 3);
-          }
+        ctx.moveTo(x0 + TS * 0.22, ty + TS * 0.18);
+        ctx.lineTo(x0 + TS * 0.46, ty + TS * 0.46);
+        ctx.lineTo(x0 + TS * 0.74, ty + TS * 0.52);
+        if (hpk < 0.45) {
+          ctx.moveTo(x0 + TS * 0.46, ty + TS * 0.46);
+          ctx.lineTo(x0 + TS * 0.36, ty + TS * 0.84);
+          ctx.moveTo(x0 + TS * 0.6, ty + TS * 0.12);
+          ctx.lineTo(x0 + TS * 0.8, ty + TS * 0.34);
         }
         ctx.stroke();
-        if (hpk < 0.7) {
-          ctx.strokeStyle = `rgba(10,10,15,${0.9 - hpk})`;
-          ctx.lineWidth = Math.max(1, TS * 0.06);
-          ctx.beginPath();
-          ctx.moveTo(cx - w * 0.3, cy - w * 0.35);
-          ctx.lineTo(cx - w * 0.05, cy - w * 0.05);
-          ctx.lineTo(cx + w * 0.25, cy + w * 0.05);
-          if (hpk < 0.4) {
-            ctx.moveTo(cx - w * 0.05, cy - w * 0.05);
-            ctx.lineTo(cx - w * 0.15, cy + w * 0.35);
-            ctx.moveTo(cx + w * 0.1, cy - w * 0.4);
-            ctx.lineTo(cx + w * 0.3, cy - w * 0.15);
-          }
-          ctx.stroke();
-        }
-        ctx.strokeStyle = "rgba(255,255,255,0.18)";
-        ctx.lineWidth = 1;
-        ctx.strokeRect(cx - w / 2 + 0.5, cy - w / 2 + 0.5, w - 1, w - 1);
-      });
+      }
+      if (hpk < 0.3) {
+        // a chunk knocked out of the corner
+        ctx.fillStyle = "#1b2232";
+        ctx.beginPath();
+        ctx.moveTo(x0 + TS, ty);
+        ctx.lineTo(x0 + TS * 0.68, ty);
+        ctx.lineTo(x0 + TS, ty + TS * 0.3);
+        ctx.fill();
+      }
+      ctx.restore();
     }
   }
 
@@ -248,20 +349,24 @@ export function createRenderer(canvas) {
     ctx.fill();
     // gun
     if (p.mode === "combat") {
-      const len = (def.type === "bullet" && def.range > 20 ? 0.95 : def.pellets > 1 ? 0.6 : def.type === "lob" || def.type === "rocket" ? 0.72 : 0.68) * TS;
-      const wid = (def.type === "rocket" || def.type === "lob" ? 0.24 : def.burst > 8 ? 0.22 : 0.15) * TS;
+      // the actual gun, side-on, held out in the facing direction (mirrored
+      // when facing left so it's never upside down)
+      const len = (GUN_LEN[def.id] || 0.8) * TS * 1.15;
       const back = p.recoil * TS * 0.12;
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(a);
-      ctx.fillStyle = "#20242e";
-      ctx.fillRect(r * 0.3 - back, -wid / 2 - 1, len + 2, wid + 2);
-      ctx.fillStyle = def.color;
-      ctx.fillRect(r * 0.3 - back, -wid / 2, len, wid);
+      if (Math.cos(a) < 0) ctx.scale(1, -1);
+      ctx.translate(r * 0.15 - back, 0);
+      // lighter metal + a faint halo so it reads against the dark floor
+      ctx.shadowColor = "rgba(255,255,255,0.55)";
+      ctx.shadowBlur = Math.max(2, TS * 0.12);
+      drawGun(ctx, def.id, len, true);
+      ctx.shadowBlur = 0;
       if (p.recoil > 0.6) {
         ctx.fillStyle = "rgba(255,230,150,0.9)";
         ctx.beginPath();
-        ctx.arc(r * 0.3 + len - back + wid * 0.6, 0, wid * 0.9, 0, Math.PI * 2);
+        ctx.arc(len * 1.02, -len * 0.06, TS * 0.16, 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.restore();
@@ -308,10 +413,23 @@ export function createRenderer(canvas) {
     ctx.fillStyle = "rgba(0,0,0,0.6)";
     rr(ctx, bx - 1, by - 1, bw + 2, bh + 2, bh / 2);
     ctx.fill();
-    const k = p.hp / MAX_HP;
+    const k = Math.max(0, p.hp / (p.maxHp || MAX_HP));
     ctx.fillStyle = k > 0.5 ? "#5df08a" : k > 0.25 ? "#ffd23f" : "#ff5a5a";
     rr(ctx, bx, by, Math.max(bh, bw * k), bh, bh / 2);
     ctx.fill();
+    // blue shield bar (from cards) sits on top of the health bar
+    if (p.maxShield > 0) {
+      const sh = Math.max(2, bh * 0.7);
+      const sy2 = by - sh - 1.5;
+      ctx.fillStyle = "rgba(0,0,0,0.6)";
+      rr(ctx, bx - 1, sy2 - 1, bw + 2, sh + 2, sh / 2);
+      ctx.fill();
+      if (p.shield > 0) {
+        ctx.fillStyle = "#4fb0ff";
+        rr(ctx, bx, sy2, Math.max(sh, bw * (p.shield / p.maxShield)), sh, sh / 2);
+        ctx.fill();
+      }
+    }
     // name tag (online / 2v2) and a marker on this phone's own player
     if (v.tags) {
       ctx.font = `800 ${Math.round(TS * 0.42)}px system-ui, sans-serif`;
@@ -335,7 +453,7 @@ export function createRenderer(canvas) {
     }
     // reload ring
     if (p.reloadT > 0) {
-      const t = 1 - p.reloadT / gunOf(p).def.reload;
+      const t = 1 - p.reloadT / (gunOf(p).def.reload * (p.buffs ? p.buffs.reload : 1));
       ctx.strokeStyle = "rgba(255,255,255,0.85)";
       ctx.lineWidth = Math.max(2, TS * 0.08);
       ctx.beginPath();
@@ -543,25 +661,40 @@ export function createRenderer(canvas) {
   }
 
   function drawBuildPreview(g, p) {
-    if (!p.alive || p.mode !== "build" || g.state === "matchEnd") return;
+    const dragging = !!p.buildAim;
+    if (!p.alive || (p.mode !== "build" && !dragging) || g.state === "matchEnd") return;
     const TS = v.TS;
-    const angle = p.aiming ? p.aimAngle : p.facing;
-    const mag = p.aiming ? p.aimMag : 0;
+    const angle = dragging ? p.buildAim.angle : p.aiming ? p.aimAngle : p.facing;
+    const mag = dragging ? p.buildAim.mag : p.aiming ? p.aimMag : 0;
     const place = buildPreview(g, p, angle, mag);
     const afford = p.mats >= WALL_COST;
     const ok = place.valid && afford;
-    const strong = p.aiming ? 1 : 0.55;
+    const strong = dragging || p.aiming ? 1 : 0.55;
     const pulse = 0.85 + Math.sin(g.time * 8) * 0.15;
+    // a ghost of the raised wall that will land: footprint on the floor,
+    // translucent block above it
+    const lift = TS * 0.3;
     place.cells.forEach(([cx, cy], i) => {
       const bad = place.blocked[i] || !afford;
       const x = sx(cx);
       const y = sy(cy);
-      ctx.fillStyle = bad ? `rgba(255,80,80,${0.28 * strong})` : `rgba(90,255,150,${0.3 * strong * pulse})`;
-      ctx.fillRect(x + 1, y + 1, TS - 2, TS - 2);
-      ctx.strokeStyle = bad ? `rgba(255,110,110,${0.9 * strong})` : `rgba(140,255,190,${0.95 * strong})`;
-      ctx.lineWidth = Math.max(1.5, TS * 0.07);
-      ctx.strokeRect(x + 1.5, y + 1.5, TS - 3, TS - 3);
+      ctx.fillStyle = bad ? `rgba(255,80,80,${0.18 * strong})` : `rgba(90,255,150,${0.16 * strong})`;
+      ctx.fillRect(x, y, TS, TS);
+      ctx.fillStyle = bad ? `rgba(160,40,40,${0.45 * strong})` : `rgba(40,150,90,${0.45 * strong * pulse})`;
+      ctx.fillRect(x, y + TS - lift, TS, lift);
+      ctx.fillStyle = bad ? `rgba(255,90,90,${0.35 * strong})` : `rgba(110,255,170,${0.38 * strong * pulse})`;
+      ctx.fillRect(x, y - lift, TS, TS);
     });
+    const c0 = place.cells[0];
+    const c2 = place.cells[2];
+    const gx = sx(Math.min(c0[0], c2[0]));
+    const gy = sy(Math.min(c0[1], c2[1])) - lift;
+    const gw = (Math.abs(c2[0] - c0[0]) + 1) * TS;
+    const gh = (Math.abs(c2[1] - c0[1]) + 1) * TS;
+    ctx.strokeStyle = ok ? `rgba(160,255,200,${0.95 * strong})` : `rgba(255,120,120,${0.95 * strong})`;
+    ctx.lineWidth = Math.max(1.5, TS * 0.08);
+    ctx.strokeRect(gx + 1, gy + 1, gw - 2, gh - 2);
+    if (!afford) label("need 30 ▰", gx + gw / 2, gy - TS * 0.45, TS * 0.5, "#ff9090", "center", 900);
     // tether from builder to the drop point
     const [mx, my] = place.cells[1];
     ctx.setLineDash([TS * 0.15, TS * 0.15]);
@@ -575,10 +708,11 @@ export function createRenderer(canvas) {
   }
 
   function drawEditPreview(g, p) {
-    if (!p.alive || p.mode !== "edit" || g.state === "matchEnd") return;
+    const dragging = !!p.editAim;
+    if (!p.alive || (p.mode !== "edit" && !dragging) || g.state === "matchEnd") return;
     const TS = v.TS;
-    const angle = p.aiming ? p.aimAngle : p.facing;
-    const target = editPreview(g, p, angle);
+    const angle = dragging ? p.editAim.angle : p.aiming ? p.aimAngle : p.facing;
+    const target = dragging ? quickEditTarget(g, p, { angle }) : editPreview(g, p, angle);
     // all of your walls get a faint outline so you can see what's editable
     for (const wall of g.world.walls) {
       if (wall.owner !== p.id) continue;
@@ -630,7 +764,7 @@ export function createRenderer(canvas) {
   }
 
   function hpBar(x, y, w, h, p, align) {
-    const k = p.hp / MAX_HP;
+    const k = Math.max(0, p.hp / (p.maxHp || MAX_HP));
     ctx.fillStyle = "rgba(8,12,20,0.7)";
     rr(ctx, x, y, w, h, h / 2);
     ctx.fill();
@@ -638,7 +772,14 @@ export function createRenderer(canvas) {
     ctx.fillStyle = TEAM[p.team].main;
     rr(ctx, align === "right" ? x + w - 2 - fw : x + 2, y + 2, fw, h - 4, (h - 4) / 2);
     ctx.fill();
-    label(`${Math.ceil(p.hp)}`, x + w / 2, y + h / 2 + 0.5, h * 0.68, "#fff");
+    // shield: a blue bar overlaid along the bottom of the health bar
+    if (p.maxShield > 0 && p.shield > 0) {
+      const sw = Math.max(2, (w - 4) * (p.shield / p.maxShield));
+      ctx.fillStyle = "#4fb0ff";
+      rr(ctx, align === "right" ? x + w - 2 - sw : x + 2, y + h - 2 - h * 0.32, sw, h * 0.32, h * 0.16);
+      ctx.fill();
+    }
+    label(`${Math.ceil(p.hp)}${p.shield > 0 ? ` +${Math.ceil(p.shield)}` : ""}`, x + w / 2, y + h / 2 + 0.5, h * 0.68, "#fff");
   }
 
   // Run fn in a pad's own frame: origin at (x, y), rotated to face its player.
@@ -798,8 +939,13 @@ export function createRenderer(canvas) {
         ctx.fillStyle = "rgba(255,255,255,0.08)";
         ctx.fillRect((W - len) / 2, y, len, 5 * u);
         ctx.fillStyle = TEAM[i].main;
-        const k = p.hp / MAX_HP;
+        const k = Math.max(0, p.hp / (p.maxHp || MAX_HP));
         ctx.fillRect((W - len * k) / 2, y, len * k, 5 * u);
+        if (p.maxShield > 0 && p.shield > 0) {
+          const ks = p.shield / p.maxShield;
+          ctx.fillStyle = "#4fb0ff";
+          ctx.fillRect((W - len * ks) / 2, i === 0 ? y - 4 * u : 5 * u, len * ks, 3 * u);
+        }
       });
     } else {
       // shared screen: a compact score pill both players can read
@@ -821,17 +967,27 @@ export function createRenderer(canvas) {
         const x = i === 0 ? 0 : W - 5 * u;
         ctx.fillStyle = "rgba(255,255,255,0.08)";
         ctx.fillRect(x, (H - len) / 2, 5 * u, len);
-        const k = p.hp / MAX_HP;
+        const k = Math.max(0, p.hp / (p.maxHp || MAX_HP));
         ctx.fillStyle = TEAM[i].main;
         ctx.fillRect(x, (H - len * k) / 2, 5 * u, len * k);
+        if (p.maxShield > 0 && p.shield > 0) {
+          const ks = p.shield / p.maxShield;
+          ctx.fillStyle = "#4fb0ff";
+          ctx.fillRect(i === 0 ? 5 * u : W - 8 * u, (H - len * ks) / 2, 3 * u, len * ks);
+        }
       });
     }
 
+    if (g.state === "cards") {
+      drawCardPhase(g, meta);
+      drawPause();
+      return;
+    }
     drawPause();
     // buttons first so a dragged stick knob stays visible on top of them
     // on a shared phone pad i is player i; otherwise the one pad is this phone's player
     const padP = (pad) => g.players[L.pvp ? pad.team : meta.local ?? 0];
-    for (const pad of L.pads) drawButtons(g, padP(pad), pad);
+    for (const pad of L.pads) drawButtons(g, padP(pad), pad, input);
     for (const pad of L.pads) drawSticks(g, padP(pad), input, pad);
 
     if (!L.pvp) {
@@ -847,6 +1003,122 @@ export function createRenderer(canvas) {
       }
     } else {
       for (const pad of L.pads) drawBanner(g, pad.team, pad.center.x, pad.center.y, pad.rot, L.portrait ? 0.7 : 0.62, L.portrait ? W : H);
+    }
+  }
+
+  // ---- buff cards between rounds -----------------------------------------------
+
+  function wrapText(text, maxW, size, weight = 700) {
+    ctx.font = `${weight} ${Math.round(size)}px system-ui, -apple-system, Segoe UI, Roboto, sans-serif`;
+    const words = text.split(" ");
+    const lines = [];
+    let line = "";
+    for (const w of words) {
+      const t = line ? line + " " + w : w;
+      if (ctx.measureText(t).width > maxW && line) {
+        lines.push(line);
+        line = w;
+      } else line = t;
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  // one card in its pad's frame, centred on (0,0)
+  function drawCard(card, w, h, state) {
+    const R = RARITIES[card.rarity];
+    const u = v.L.u * (w / (104 * v.L.u));
+    ctx.save();
+    if (state === "dim") ctx.globalAlpha = 0.3;
+    if (card.rarity === "epic" || card.rarity === "legendary" || state === "picked") {
+      ctx.shadowColor = state === "picked" ? "#ffffff" : R.color;
+      ctx.shadowBlur = 18;
+    }
+    const grad = ctx.createLinearGradient(0, -h / 2, 0, h / 2);
+    grad.addColorStop(0, shade(R.color, 0.42));
+    grad.addColorStop(0.55, "#141c2e");
+    grad.addColorStop(1, "#0d1322");
+    ctx.fillStyle = grad;
+    rr(ctx, -w / 2, -h / 2, w, h, 12 * u);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = state === "picked" ? "#ffffff" : R.color;
+    ctx.lineWidth = state === "picked" ? 4 : card.rarity === "common" ? 1.5 : 2.5;
+    ctx.stroke();
+    // rarity ribbon
+    ctx.fillStyle = R.color;
+    rr(ctx, -w / 2 + 8 * u, -h / 2 + 8 * u, w - 16 * u, 15 * u, 7 * u);
+    ctx.fill();
+    label(R.name.toUpperCase(), 0, -h / 2 + 15.5 * u, 8 * u, "#0b1220", "center", 900);
+    // emblem
+    ctx.save();
+    ctx.translate(0, -h * 0.13);
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    ctx.beginPath();
+    ctx.arc(0, 0, w * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    drawCardIcon(ctx, card.icon, w * 0.42);
+    ctx.restore();
+    // name + effect
+    label(card.name, 0, h * 0.17, 11 * u, "#ffffff", "center", 900);
+    const lines = wrapText(card.desc, w - 14 * u, 8.5 * u, 700);
+    lines.slice(0, 3).forEach((ln, i) => label(ln, 0, h * 0.29 + i * 10.5 * u, 8.5 * u, R.color, "center", 700));
+    if (state === "picked") {
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(w / 2 - 12 * u, -h / 2 + 12 * u, 11 * u, 0, Math.PI * 2);
+      ctx.fill();
+      label("✓", w / 2 - 12 * u, -h / 2 + 12.5 * u, 13 * u, "#0b1220", "center", 900);
+    }
+    ctx.restore();
+  }
+
+  function drawCardPhase(g, meta) {
+    const L = v.L;
+    const u = L.u;
+    ctx.fillStyle = "rgba(5,8,14,0.78)";
+    ctx.fillRect(0, 0, v.W, v.H);
+    for (const pad of L.pads) {
+      const pid = L.pvp ? pad.team : meta.local ?? 0;
+      const p = g.players[pid];
+      const hand = g.offers[pid] || [];
+      const picked = g.picks[pid];
+      const rects = cardRects(L, pad, hand.length);
+      const lw = rects[0]?.lw || 100;
+      const lh = rects[0]?.lh || 140;
+      // title / footer in the pad's frame
+      const c = rects[1] || rects[0];
+      inFrame(pad, c.cx, c.cy, () => {
+        const who = L.pvp ? `${meta.names[pid]} · ` : "";
+        label(`${who}ROUND ${g.round} · PICK A CARD`, 0, -lh / 2 - 16 * u, 12 * u, L.pvp ? TEAM[p.team].light : "#ffffff", "center", 900);
+        const t = Math.max(0, Math.ceil(g.stateT));
+        const sub = picked >= 0
+          ? (g.picks.every((k) => k >= 0) ? "Starting…" : "Waiting for the other player…")
+          : `Tap a card · ${t}s`;
+        label(sub, 0, lh / 2 + 15 * u, 9.5 * u, picked >= 0 ? "#6dff9a" : "rgba(255,255,255,0.7)", "center", 800);
+        // cards already held this match
+        if (p.cards.length) {
+          const size = 13 * u;
+          const total = p.cards.length * (size + 4 * u);
+          p.cards.forEach((id, k) => {
+            const cd = CARD_BY_ID[id];
+            const x = -total / 2 + k * (size + 4 * u) + size / 2;
+            const y = lh / 2 + 32 * u;
+            ctx.fillStyle = RARITIES[cd.rarity].color;
+            rr(ctx, x - size / 2, y - size / 2, size, size, 3 * u);
+            ctx.fill();
+            ctx.save();
+            ctx.translate(x, y);
+            drawCardIcon(ctx, cd.icon, size * 0.75);
+            ctx.restore();
+          });
+        }
+      });
+      hand.forEach((id, i) => {
+        const r = rects[i];
+        const state = picked < 0 ? "open" : picked === i ? "picked" : "dim";
+        inFrame(pad, r.cx, r.cy, () => drawCard(CARD_BY_ID[id], lw, lh, state));
+      });
     }
   }
 
@@ -956,38 +1228,90 @@ export function createRenderer(canvas) {
     ctx.fillRect(x - bw / 2, y + gap / 2, bw, bh);
   }
 
-  function drawButtons(g, p, pad) {
+  function drawButtons(g, p, pad, input) {
     const u = v.L.u;
     const B = pad.build;
     const mode = p.mode;
-    // BUILD toggle (sits over the attack stick, from its player's point of view)
-    const on = mode !== "combat";
+    const drag = input && input.st.ps ? input.st.ps[pad.team].btn : null;
+    // a drag that started on BUILD / EDIT: ring + knob like a mini stick
+    const ring = (b, color) => {
+      const R = v.L.R * 1.6;
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.5;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, R, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+      const dx = drag.x - drag.bx;
+      const dy = drag.y - drag.by;
+      const d = Math.hypot(dx, dy);
+      const k = d > R ? R / d : 1;
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath();
+      ctx.arc(b.x + dx * k, b.y + dy * k, b.r * 0.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      if (drag.dragged && d < v.L.R * 0.35) inFrame(pad, b.x, b.y, () => label("CANCEL", 0, -b.r - 12 * u, 8 * u, "#fff"));
+    };
+
+    // BUILD: tap = wall in front of you, drag = aim it
+    const afford = p.mats >= WALL_COST;
+    const building = drag && drag.kind === "build";
     inFrame(pad, B.x, B.y, () => {
-      ctx.fillStyle = on ? "#5aff96" : "rgba(8,12,20,0.75)";
+      ctx.fillStyle = building ? "#5aff96" : "rgba(8,12,20,0.78)";
       ctx.beginPath();
       ctx.arc(0, 0, B.r, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = on ? "#c8ffdd" : "rgba(90,255,150,0.7)";
+      ctx.strokeStyle = afford ? "rgba(90,255,150,0.9)" : "rgba(255,110,110,0.8)";
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      // fill arc = materials
+      ctx.strokeStyle = afford ? "#5aff96" : "#ff8080";
+      ctx.lineWidth = Math.max(2, B.r * 0.12);
+      ctx.beginPath();
+      ctx.arc(0, 0, B.r + 4 * u, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (p.mats / MAX_MATS));
+      ctx.stroke();
+      brick(0, -B.r * 0.14, B.r * 0.4, building ? "#0b1220" : afford ? "#5aff96" : "#ff8080");
+      label("BUILD", 0, B.r * 0.52, Math.min(8 * u, B.r * 0.28), building ? "#0b1220" : afford ? "#5aff96" : "#ff8080", "center", 900);
+      label(`▰ ${Math.floor(p.mats)}`, 0, -B.r - 12 * u, 9.5 * u, afford ? "#cfe9ff" : "#ff8080", "center", 900);
+    });
+    // EDIT and RESET beside it
+    const E = pad.edit;
+    const editing = drag && drag.kind === "qedit";
+    inFrame(pad, E.x, E.y, () => {
+      ctx.fillStyle = editing ? "#ffd23f" : "rgba(8,12,20,0.78)";
+      ctx.beginPath();
+      ctx.arc(0, 0, E.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,210,63,0.9)";
       ctx.lineWidth = 2;
       ctx.stroke();
-      if (on) drawModeIcon(0, -B.r * 0.12, B.r * 0.42, "combat", "#0b1220");
-      else brick(0, -B.r * 0.12, B.r * 0.4, "#5aff96");
-      label(on ? "FIGHT" : "BUILD", 0, B.r * 0.55, Math.min(8 * u, B.r * 0.28), on ? "#0b1220" : "#5aff96", "center", 900);
-      // materials beside it
-      const mats = Math.floor(p.mats);
-      const mx = -B.r - 10 * u;
-      label(`▰ ${mats}`, mx, -5 * u, 11 * u, mats >= WALL_COST ? "#cfe9ff" : "#ff8080", "right", 900);
-      label(`wall ${WALL_COST}`, mx, 9 * u, 7.5 * u, "rgba(255,255,255,0.5)", "right", 700);
-      ctx.fillStyle = "rgba(255,255,255,0.15)";
-      ctx.fillRect(mx - 40 * u, 17 * u, 40 * u, 3 * u);
-      ctx.fillStyle = "#cfe9ff";
-      ctx.fillRect(mx - 40 * u, 17 * u, 40 * u * (p.mats / MAX_MATS), 3 * u);
+      drawModeIcon(0, -E.r * 0.12, E.r * 0.42, "edit", editing ? "#0b1220" : "#ffd23f");
+      label("EDIT", 0, E.r * 0.55, Math.min(7 * u, E.r * 0.3), editing ? "#0b1220" : "#ffd23f", "center", 900);
     });
+    const Rz = pad.reset;
+    const anyEdit = !!nearestEditedWall(g, p, 30);
+    inFrame(pad, Rz.x, Rz.y, () => {
+      ctx.fillStyle = "rgba(8,12,20,0.78)";
+      ctx.beginPath();
+      ctx.arc(0, 0, Rz.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = anyEdit ? "#8fd3ff" : "rgba(255,255,255,0.2)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      label("↺", 0, 0, Rz.r * 1.05, anyEdit ? "#8fd3ff" : "rgba(255,255,255,0.3)", "center", 900);
+    });
+    if (building) ring(B, "#5aff96");
+    if (editing) ring(E, "#ffd23f");
 
     const slots = [pad.slot0, pad.slot1];
     // r is the slot rect in the pad's own frame, centred on the origin
     const frameRect = (s) => ({ x: -s.lw / 2, y: -s.lh / 2, w: s.lw, h: s.lh });
-    if (mode === "combat") {
+    {
       p.guns.forEach((gun, i) => inFrame(pad, slots[i].cx, slots[i].cy, () => {
         const r = frameRect(slots[i]);
         const active = i === p.slot;
@@ -999,19 +1323,20 @@ export function createRenderer(canvas) {
         ctx.strokeStyle = active ? tier : "rgba(255,255,255,0.15)";
         ctx.lineWidth = active ? 2.5 : 1;
         ctx.stroke();
-        ctx.fillStyle = gun.def.color;
-        rr(ctx, r.x + 6 * u * s, r.y + r.h / 2 - 4 * u * s, 16 * u * s, 8 * u * s, 3 * u * s);
-        ctx.fill();
+        ctx.save();
+        ctx.translate(r.x + 4 * u * s, r.y + r.h / 2 + 1 * u * s);
+        drawGun(ctx, gun.def.id, 22 * u * s);
+        ctx.restore();
         const name = gun.def.name.toUpperCase();
         const tx = r.x + 28 * u * s;
         ctx.font = `800 ${Math.round(8.5 * u * s)}px system-ui, sans-serif`;
         const fit = Math.min(1, (r.w - 34 * u * s) / ctx.measureText(name).width);
         label(name, tx, r.y + r.h * 0.34, 8.5 * u * s * fit, active ? "#fff" : "rgba(255,255,255,0.65)", "left", 800);
         const reloading = active && p.reloadT > 0;
-        const txt = reloading ? "RELOADING…" : `${gun.ammo} / ${gun.def.mag}`;
+        const txt = reloading ? "RELOADING…" : `${gun.ammo} / ${magOf(p, gun)}`;
         label(txt, tx, r.y + r.h * 0.7, 9.5 * u * s, gun.ammo === 0 || reloading ? "#ffb36b" : tier, "left", 800);
         if (reloading) {
-          const k = 1 - p.reloadT / gun.def.reload;
+          const k = 1 - p.reloadT / (gun.def.reload * (p.buffs ? p.buffs.reload : 1));
           ctx.fillStyle = "#ffb36b";
           ctx.fillRect(r.x + 6 * u, r.y + r.h - 4 * u * s, (r.w - 12 * u) * k, 2 * u);
         } else if (active && p.cd > 0) {
@@ -1020,37 +1345,6 @@ export function createRenderer(canvas) {
           ctx.fillRect(r.x + 6 * u, r.y + r.h - 4 * u * s, (r.w - 12 * u) * k, 2 * u);
         }
       }));
-    } else {
-      // EDIT toggle
-      inFrame(pad, slots[0].cx, slots[0].cy, () => {
-        const r = frameRect(slots[0]);
-        const s = r.h / 34;
-        const editing = mode === "edit";
-        ctx.fillStyle = editing ? "#ffd23f" : "rgba(8,12,20,0.75)";
-        rr(ctx, r.x, r.y, r.w, r.h, 8 * u * s);
-        ctx.fill();
-        ctx.strokeStyle = "#ffd23f";
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        drawModeIcon(r.x + 18 * u * s, 0, 7 * u * s, "edit", editing ? "#0b1220" : "#ffd23f");
-        label(editing ? "EDITING" : "EDIT", r.x + 32 * u * s, r.y + r.h * 0.38, 10 * u * s, editing ? "#0b1220" : "#ffd23f", "left", 900);
-        label(editing ? "tap: back to build" : "cut / restore a tile", r.x + 32 * u * s, r.y + r.h * 0.72, 7 * u * s, editing ? "rgba(11,18,32,0.75)" : "rgba(255,255,255,0.6)", "left", 700);
-      });
-      // RESET
-      inFrame(pad, slots[1].cx, slots[1].cy, () => {
-        const r = frameRect(slots[1]);
-        const s = r.h / 34;
-        const any = !!nearestEditedWall(g, p);
-        ctx.fillStyle = "rgba(8,12,20,0.75)";
-        rr(ctx, r.x, r.y, r.w, r.h, 8 * u * s);
-        ctx.fill();
-        ctx.strokeStyle = any ? "#8fd3ff" : "rgba(255,255,255,0.15)";
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        label("↺", r.x + 18 * u * s, 0, 16 * u * s, any ? "#8fd3ff" : "rgba(255,255,255,0.3)", "center", 900);
-        label("RESET", r.x + 32 * u * s, r.y + r.h * 0.38, 10 * u * s, any ? "#8fd3ff" : "rgba(255,255,255,0.35)", "left", 900);
-        label("restore nearest edit", r.x + 32 * u * s, r.y + r.h * 0.72, 7 * u * s, "rgba(255,255,255,0.5)", "left", 700);
-      });
     }
   }
 

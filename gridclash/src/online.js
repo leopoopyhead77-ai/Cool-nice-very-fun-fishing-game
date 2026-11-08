@@ -121,6 +121,8 @@ export function createGuestView(start, slot, guest, input) {
       if (history.length > 240) history.shift();
       if (p.alive && game.state === "fight") predictMove(game, p, cmd.mx, cmd.my, cmd.aiming, dt);
       p.aiming = cmd.aiming;
+      p.buildAim = cmd.buildAim || null;
+      p.editAim = cmd.editAim || null;
       if (cmd.aiming) {
         p.aimAngle = cmd.aimAngle;
         p.aimMag = cmd.aimMag;

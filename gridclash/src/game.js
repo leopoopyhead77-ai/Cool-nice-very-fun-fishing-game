@@ -18,6 +18,7 @@
 // commands.
 
 import { GUN_BY_ID } from "./guns.js";
+import { baseBuffs, buffsFrom, dealHand, CARD_BY_ID, rarityRank } from "./cards.js";
 import {
   GW, GH, WALL_COST, SPAWNS, MEDKIT_SPOTS,
   createWorld, clearWalls, raycast, lineClear, segCircle, isSolid,
@@ -52,7 +53,8 @@ function makePlayer(id, team, loadout, name) {
   return {
     id, team, name,
     x: 0, y: 0, vx: 0, vy: 0, r: 0.38,
-    hp: MAX_HP, alive: true,
+    hp: MAX_HP, maxHp: MAX_HP, shield: 0, maxShield: 0, alive: true,
+    cards: [], buffs: baseBuffs(), calmT: 0,
     loadout,
     guns: loadout.map((id) => ({ def: GUN_BY_ID[id], ammo: GUN_BY_ID[id].mag })),
     slot: 0, cd: 0, reloadT: 0, swapT: 0, burst: null,
@@ -67,12 +69,16 @@ function makePlayer(id, team, loadout, name) {
 // loadouts / names / controllers: one entry per player. teams: team (0 blue,
 // 1 red) per player; defaults to alternating, so 2 players = 1v1 and
 // 4 players = 2v2 with ids 0,2 on blue and 1,3 on red.
-export function createGame({ loadouts, names, controllers, seed, teams }) {
+// cards: deal buff cards before every round (local app)
+export function createGame({ loadouts, names, controllers, seed, teams, cards }) {
   const tm = teams || loadouts.map((_, i) => i % 2);
   const g = {
     world: createWorld(),
     players: loadouts.map((l, i) => makePlayer(i, tm[i], l, names[i])),
     controllers,
+    useCards: !!cards,
+    offers: [],   // per player: card ids on offer this round
+    picks: [],    // per player: chosen index, or -1
     bullets: [],
     beams: [],
     booms: [],
@@ -94,6 +100,7 @@ export function createGame({ loadouts, names, controllers, seed, teams }) {
   };
   g.score = Array.from({ length: g.numTeams }, () => 0);
   resetRound(g);
+  if (g.useCards) startCards(g);
   return g;
 }
 
@@ -130,17 +137,63 @@ function resetRound(g) {
       p.y = mates.length === 1 ? SPAWNS[p.team].y : 6.5 + (7 * k) / (mates.length - 1);
     }
     p.vx = p.vy = 0;
-    p.hp = MAX_HP;
+    p.buffs = buffsFrom(p.cards);
+    p.maxHp = MAX_HP + p.buffs.maxHp;
+    p.hp = p.maxHp;
+    p.maxShield = p.buffs.shield;
+    p.shield = p.maxShield;
+    p.calmT = 0;
     p.alive = true;
-    p.guns.forEach((gun) => (gun.ammo = gun.def.mag));
+    p.guns.forEach((gun) => (gun.ammo = magOf(p, gun)));
     p.cd = p.reloadT = p.swapT = 0;
     p.burst = null;
-    p.mats = START_MATS;
+    p.mats = Math.min(MAX_MATS, START_MATS + p.buffs.mats);
     p.mode = "combat";
     p.facing = g.numTeams > 2 ? Math.atan2(10 - p.y, 15 - p.x) : p.team === 0 ? 0 : Math.PI;
     p.aiming = false;
     p.roundDmg = 0;
   });
+}
+
+// magazine size after buffs
+export const magOf = (p, gun) => Math.max(1, Math.round(gun.def.mag * (p.buffs ? p.buffs.mag : 1)));
+
+// ---- buff cards ----------------------------------------------------------------
+
+const CARD_TIME = 25;
+
+function startCards(g) {
+  g.state = "cards";
+  g.stateT = CARD_TIME;
+  g.offers = g.players.map(() => dealHand(g.rng, 3));
+  g.picks = g.players.map(() => -1);
+  emit(g, { t: "cards" });
+}
+
+function pickCard(g, p, i) {
+  if (g.state !== "cards" || g.picks[p.id] >= 0) return;
+  const hand = g.offers[p.id];
+  if (!hand || i < 0 || i >= hand.length) return;
+  g.picks[p.id] = i;
+  emit(g, { t: "card", pid: p.id, team: p.team, card: hand[i] });
+}
+
+function finishCards(g) {
+  g.players.forEach((p) => {
+    // out of time: keep the rarest card on offer
+    if (g.picks[p.id] < 0) {
+      const hand = g.offers[p.id];
+      let best = 0;
+      hand.forEach((id, k) => {
+        if (rarityRank(CARD_BY_ID[id].rarity) > rarityRank(CARD_BY_ID[hand[best]].rarity)) best = k;
+      });
+      g.picks[p.id] = best;
+    }
+    p.cards.push(g.offers[p.id][g.picks[p.id]]);
+  });
+  resetRound(g); // re-applies buffs: new max hp, shield, mags, mats
+  g.state = "countdown";
+  g.stateT = 3;
 }
 
 export const enemiesOf = (g, p) => g.players.filter((q) => q.team !== p.team);
@@ -169,7 +222,14 @@ export function step(g, dt) {
   g.time += dt;
   g.shake = Math.max(0, g.shake - dt * 3);
 
-  if (g.state === "countdown") {
+  if (g.state === "cards") {
+    g.stateT -= dt;
+    g.players.forEach((p, i) => {
+      const cmd = g.controllers[i].poll(g, p, dt);
+      for (const a of cmd.actions || []) if (a.t === "card") pickCard(g, p, a.i);
+    });
+    if (g.picks.every((k) => k >= 0) || g.stateT <= 0) finishCards(g);
+  } else if (g.state === "countdown") {
     g.stateT -= dt;
     // let controllers aim / preview during the countdown, but nothing fires
     g.players.forEach((p, i) => {
@@ -209,6 +269,7 @@ export function step(g, dt) {
         g.state = "countdown";
         g.stateT = 3;
         emit(g, { t: "round" });
+        if (g.useCards) startCards(g);
       }
     }
   }
@@ -241,11 +302,14 @@ function applyCommand(g, p, cmd, dt) {
     mx /= ml;
     my /= ml;
   }
-  const speed = MOVE_SPEED * (cmd.aiming ? 0.82 : 1);
+  const speed = MOVE_SPEED * p.buffs.speed * (cmd.aiming ? 0.82 : 1);
   const k = Math.min(1, dt * 14);
   p.vx += (mx * speed - p.vx) * k;
   p.vy += (my * speed - p.vy) * k;
 
+  // live BUILD / EDIT drags (for the placement preview)
+  p.buildAim = cmd.buildAim || null;
+  p.editAim = cmd.editAim || null;
   p.aiming = !!cmd.aiming;
   if (p.aiming) {
     p.aimAngle = cmd.aimAngle;
@@ -275,6 +339,13 @@ function handleAction(g, p, a) {
     case "edit":
       if (p.mode === "edit") tryEdit(g, p, a);
       break;
+    // one-touch building: no mode switch needed
+    case "qbuild":
+      tryBuild(g, p, a);
+      break;
+    case "qedit":
+      tryEdit(g, p, a, true);
+      break;
     case "reset":
       tryReset(g, p, a);
       break;
@@ -303,8 +374,8 @@ function selectSlot(g, p, slot) {
 
 function startReload(g, p) {
   const gun = gunOf(p);
-  if (p.reloadT > 0 || gun.ammo >= gun.def.mag) return;
-  p.reloadT = gun.def.reload;
+  if (p.reloadT > 0 || gun.ammo >= magOf(p, gun)) return;
+  p.reloadT = gun.def.reload * p.buffs.reload;
   p.burst = null;
   emit(g, { t: "reload", pid: p.id, team: p.team });
 }
@@ -340,7 +411,7 @@ function pullTrigger(g, p, a) {
   const def = gun.def;
   p.facing = angle;
   p.burst = { angle, mag, left: def.burst, t: 0 };
-  p.cd = def.cd + (def.burst - 1) * def.gap;
+  p.cd = (def.cd + (def.burst - 1) * def.gap) * p.buffs.rate;
 }
 
 function fireRound(g, p, angle, mag) {
@@ -422,7 +493,10 @@ function updatePlayers(g, dt) {
     p.y += p.vy * dt;
     collideCircle(g.world, p);
 
-    p.mats = Math.min(MAX_MATS, p.mats + MATS_REGEN * dt);
+    p.mats = Math.min(MAX_MATS, p.mats + MATS_REGEN * p.buffs.matsRegen * dt);
+    // regen card: heals after 3 s without taking damage
+    p.calmT += dt;
+    if (p.buffs.regen > 0 && p.calmT > 3 && p.hp < p.maxHp) p.hp = Math.min(p.maxHp, p.hp + p.buffs.regen * dt);
     p.cd = Math.max(0, p.cd - dt);
     p.swapT = Math.max(0, p.swapT - dt);
     if (p.reloadT > 0) {
@@ -430,7 +504,7 @@ function updatePlayers(g, dt) {
       if (p.reloadT <= 0) {
         p.reloadT = 0;
         const gun = gunOf(p);
-        gun.ammo = gun.def.mag;
+        gun.ammo = magOf(p, gun);
         emit(g, { t: "reloaded", pid: p.id, team: p.team });
       }
     }
@@ -487,9 +561,9 @@ function updateMedkits(g, dt) {
       continue;
     }
     for (const p of g.players) {
-      if (!p.alive || p.hp >= MAX_HP) continue;
+      if (!p.alive || p.hp >= p.maxHp) continue;
       if (Math.hypot(p.x - m.x, p.y - m.y) < p.r + 0.4) {
-        const heal = Math.min(MEDKIT_HEAL, MAX_HP - p.hp);
+        const heal = Math.min(MEDKIT_HEAL, p.maxHp - p.hp);
         p.hp += heal;
         m.up = false;
         m.t = MEDKIT_EVERY;
@@ -613,18 +687,33 @@ function explode(g, x, y, def, ownerId) {
 
 function damagePlayer(g, p, amount, by) {
   if (!p.alive || g.state !== "fight") return;
+  // cards: attacker's damage boost, defender's armour
+  if (by && by !== p && by.buffs) amount *= by.buffs.dmg;
+  if (p.buffs) amount *= 1 - p.buffs.armor;
   amount = Math.max(1, Math.round(amount));
-  p.hp -= amount;
+  p.calmT = 0;
+  // the blue shield bar soaks damage first
+  let shieldHit = 0;
+  if (p.shield > 0) {
+    shieldHit = Math.min(p.shield, amount);
+    p.shield -= shieldHit;
+  }
+  p.hp -= amount - shieldHit;
   p.hitFlash = 1;
   if (by && by !== p) {
     by.stats.dmg += amount;
     by.stats.hits++;
     by.roundDmg += amount;
+    if (by.buffs && by.buffs.lifesteal > 0 && by.alive) {
+      by.hp = Math.min(by.maxHp, by.hp + amount * by.buffs.lifesteal);
+    }
   }
-  addText(g, p.x + (g.rng() - 0.5) * 0.5, p.y - 0.7, String(amount), amount >= 50 ? "#ffd23f" : "#ffffff");
+  const allShield = shieldHit === amount;
+  addText(g, p.x + (g.rng() - 0.5) * 0.5, p.y - 0.7, String(amount), allShield ? "#7cc4ff" : amount >= 50 ? "#ffd23f" : "#ffffff");
   emit(g, { t: "hurt", pid: p.id, team: p.team, amount });
   if (p.hp <= 0) {
     p.hp = 0;
+    p.shield = 0;
     p.alive = false;
     p.burst = null;
     if (by && by !== p) by.stats.kills++;
@@ -676,8 +765,31 @@ function updateFx(g, dt) {
 
 // ---- building & editing ------------------------------------------------------
 
+// Where a wall would land. If the exact spot is blocked (rock, another wall,
+// someone standing there) it tries sliding the wall one tile along its length,
+// then a little further out, so building near cover doesn't just fail.
 export function buildPreview(g, p, angle, mag) {
-  return wallPlacement(g.world, g.players, p.x, p.y, angle, mag);
+  const base = wallPlacement(g.world, g.players, p.x, p.y, angle, mag);
+  if (base.valid) return base;
+  const dx = Math.cos(angle);
+  const dy = Math.sin(angle);
+  // along the wall = perpendicular to the aim
+  const ax = base.vertical ? 0 : 1;
+  const ay = base.vertical ? 1 : 0;
+  const tries = [];
+  for (const out of [0, 0.35, 0.7]) {
+    for (const side of [1, -1, 2, -2]) tries.push([side, out]);
+  }
+  for (const [side, out] of tries) {
+    const m = Math.min(1, mag + out);
+    const place = wallPlacement(g.world, g.players, p.x + ax * side, p.y + ay * side, angle, m);
+    // must still be the same orientation and roughly in front of the player
+    if (!place.valid || place.vertical !== base.vertical) continue;
+    const [mx, my] = place.cells[1];
+    const ahead = (mx + 0.5 - p.x) * dx + (my + 0.5 - p.y) * dy;
+    if (ahead > 0.6) return place;
+  }
+  return base;
 }
 
 function tryBuild(g, p, a) {
@@ -688,7 +800,18 @@ function tryBuild(g, p, a) {
     emit(g, { t: "deny", pid: p.id, team: p.team });
     return false;
   }
-  placeWall(g.world, p.id, place, g.time, p.team);
+  placeWall(g.world, p.id, place, g.time, p.team, p.buffs.wallHp);
+  // dust as it lands
+  for (const [cx, cy] of place.cells) {
+    for (let k = 0; k < 5; k++) {
+      const ang = g.rng() * Math.PI * 2;
+      g.particles.push({
+        x: cx + 0.5 + Math.cos(ang) * 0.4, y: cy + 0.5 + Math.sin(ang) * 0.4,
+        vx: Math.cos(ang) * 2.5, vy: Math.sin(ang) * 2.5,
+        life: 0.35 + g.rng() * 0.25, t: 0, size: 0.12 + g.rng() * 0.1, color: "rgba(210,200,180,0.8)",
+      });
+    }
+  }
   p.mats -= WALL_COST;
   p.stats.walls++;
   emit(g, { t: "build", pid: p.id, team: p.team });
@@ -704,9 +827,32 @@ const cellOccupied = (g, cx, cy) =>
 
 // One tile per wall can be open at a time. Editing the open tile closes it
 // again; editing a different tile moves the opening there.
-function tryEdit(g, p, a) {
+// nearest of your wall tiles within reach (for a quick EDIT tap)
+function nearestOwnTile(g, p, reach = 3.4) {
+  let best = null;
+  let bestD = reach;
+  for (const wall of g.world.walls) {
+    if (wall.owner !== p.id) continue;
+    wall.cells.forEach((c, i) => {
+      if (!c.alive) return;
+      const d = Math.hypot(c.x + 0.5 - p.x, c.y + 0.5 - p.y);
+      if (d < bestD) {
+        bestD = d;
+        best = { wall, i, cx: c.x, cy: c.y };
+      }
+    });
+  }
+  return best;
+}
+
+export function quickEditTarget(g, p, a) {
+  if (a && !a.tap) return editPreview(g, p, a.angle);
+  return editPreview(g, p, p.facing) || nearestOwnTile(g, p);
+}
+
+function tryEdit(g, p, a, quick = false) {
   const angle = a.tap ? p.facing : a.angle;
-  const target = editPreview(g, p, angle);
+  const target = quick ? quickEditTarget(g, p, a) : editPreview(g, p, angle);
   if (!target) {
     emit(g, { t: "deny", pid: p.id, team: p.team });
     return false;
@@ -797,7 +943,7 @@ export function predictMove(g, p, mx, my, aiming, dt) {
     mx /= ml;
     my /= ml;
   }
-  const speed = MOVE_SPEED * (aiming ? 0.82 : 1);
+  const speed = MOVE_SPEED * (p.buffs ? p.buffs.speed : 1) * (aiming ? 0.82 : 1);
   const k = Math.min(1, dt * 14);
   p.vx += (mx * speed - p.vx) * k;
   p.vy += (my * speed - p.vy) * k;
