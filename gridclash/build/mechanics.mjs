@@ -19,10 +19,44 @@ let ok = true; const check = (c, m) => { console.log((c ? "ok   " : "FAIL ") + m
 { const g = mk("ricochet"); const evs = []; fire(g, -Math.PI / 2); for (let i = 0; i < 90; i++) { step(g, 1 / 60); evs.push(...g.events); g.events.length = 0; } check(evs.some((e) => e.t === "bounce"), "Ricochet bolts bounce off walls"); }
 // cluster
 { const g = mk("cluster"); fire(g, 0, 0.6); let booms = 0; for (let i = 0; i < 120; i++) { step(g, 1 / 60); booms += g.events.filter((e) => e.t === "boom").length; g.events.length = 0; } check(booms >= 5, `Cluster Launcher bursts into bomblets (${booms} explosions)`); }
-// rail through walls
+// railgun: through ONE wall (destroying it on the beam's path), stopped by a second
 {
-  const dmgThrough = (walls) => { const g = mk("rail"); for (let k = 0; k < walls; k++) { const pl = wallPlacement(g.world, g.players, 5.5 + k * 1.0, 16.5, 0, 0); pl.cells = [[6 + k, 15], [6 + k, 16], [6 + k, 17]]; placeWall(g.world, 1, pl, 0, 1); } const hp = g.players[1].hp; fire(g, 0); step(g, 1 / 60); return hp - g.players[1].hp; };
-  const d0 = dmgThrough(0), d2 = dmgThrough(2);
-  check(d0 === 42 && d2 < d0 * 0.6, `Railgun loses damage per wall (open ${d0}, through 2 walls ${d2})`);
+  const shot = (walls) => {
+    const g = mk("rail");
+    for (let k = 0; k < walls; k++) {
+      const pl = wallPlacement(g.world, g.players, 5.5, 16.5, 0, 0);
+      pl.cells = [[6 + k * 2, 15], [6 + k * 2, 16], [6 + k * 2, 17]];
+      placeWall(g.world, 1, pl, 0, 1);
+    }
+    const hp = g.players[1].hp;
+    fire(g, 0);
+    step(g, 1 / 60);
+    const firstGone = !g.world.wallAt[16 * 30 + 6];
+    return { dmg: hp - g.players[1].hp, firstGone, walls: g.world.walls.length };
+  };
+  const open = shot(0), one = shot(1), two = shot(2);
+  check(open.dmg === 42, `Railgun hits for 42 in the open (${open.dmg})`);
+  check(one.dmg > 0 && one.dmg < 42 && one.firstGone, `Railgun blasts through one wall, destroying it, 30% weaker (${one.dmg})`);
+  check(two.dmg === 0 && two.firstGone, `Railgun is stopped by a second wall (${two.dmg} dmg)`);
+}
+// grenade launcher: limited supply per round, then it switches to the other gun
+{
+  const g = createGame({ loadouts: [["grenade", "pistol"], ["pistol", "pistol"]], names: ["a", "b"], controllers: [idle, idle], seed: 5 });
+  g.state = "fight";
+  const p = g.players[0];
+  p.x = 4.5; p.y = 3.5;
+  g.players[1].x = 25.5; g.players[1].y = 16.5;
+  let fired = 0;
+  for (let k = 0; k < 40 && p.slot === 0; k++) {
+    const before = p.stats.shots;
+    fire(g, -Math.PI / 2, 0.3);
+    for (let i = 0; i < 60 * 3; i++) step(g, 1 / 60);
+    fired += p.stats.shots - before;
+  }
+  check(fired === 6, `Grenade Launcher fires exactly 6 grenades per round (${fired})`);
+  check(p.slot === 1, "when it runs out you switch to your other gun");
+  g.state = "roundEnd"; g.stateT = 0.01; g.score = [0, 1];
+  for (let i = 0; i < 10; i++) step(g, 1 / 60);
+  check(p.guns[0].ammo + p.guns[0].reserve === 6, "the supply refills next round");
 }
 process.exit(ok ? 0 : 1);

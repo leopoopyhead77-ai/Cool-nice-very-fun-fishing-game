@@ -99,11 +99,11 @@ The bot picks cards too. It prefers rarer cards, and damage and shield cards.
 | Double Barrel | Epic | both barrels back to back, point blank |
 | Minigun | Epic | 14 rounds per release, melts builds |
 | Ricochet Blaster | Epic | bolts **bounce off walls** twice, so you can hit people behind cover |
-| Grenade Launcher | Epic | lobs over walls; aim distance = throw distance *(nerfed: 42 dmg, smaller blast, slower shells)* |
+| Grenade Launcher | Epic | lobs over walls; aim distance = throw distance. **Limited supply: 6 grenades per round** (then you switch to your other gun) *(also nerfed: 42 dmg, smaller blast, slower shells)* |
 | Sniper | Legendary | huge single shots *(nerfed: 66 dmg, slower to cycle, 3-round mag)* |
 | Rocket Launcher | Legendary | explodes on contact, deletes walls |
-| Cluster Launcher | Legendary | lobbed bomb that **bursts into 4 bomblets** |
-| Railgun | Mythic | instant beam through builds, **loses 30% damage per wall** *(nerfed: 42 dmg, slower, 2-round mag)* |
+| Cluster Launcher | Legendary | lobbed bomb that **bursts into 4 bomblets**. Limited supply: 4 per round |
+| Railgun | Mythic | instant beam that **blasts through one wall** (destroying it, 30% weaker after); the next wall or rock stops it *(nerfed: 42 dmg, slower, 2-round mag)* |
 
 Being slowed shows as an icy ring and burning shows flames on the player. When you're low on health, the screen edges glow red.
 

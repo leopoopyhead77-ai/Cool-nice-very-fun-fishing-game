@@ -40,6 +40,7 @@ export function createBot(difficulty = "normal") {
       let score = -Math.abs(def.pref - dist);
       if (dist > def.range) score -= 20;
       if (gun.ammo <= 0) score -= 6;
+      if (gun.ammo <= 0 && gun.reserve !== null && gun.reserve !== undefined && gun.reserve <= 0) score -= 100; // out for the round
       if (i === p.slot) score += 1.5; // hysteresis
       if (score > bestScore) {
         bestScore = score;

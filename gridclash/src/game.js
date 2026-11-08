@@ -147,7 +147,11 @@ function resetRound(g) {
     p.burnT = 0;
     p.burnAcc = 0;
     p.alive = true;
-    p.guns.forEach((gun) => (gun.ammo = magOf(p, gun)));
+    p.guns.forEach((gun) => {
+      gun.ammo = magOf(p, gun);
+      // limited-supply guns: what's left beyond the loaded magazine this round
+      gun.reserve = gun.def.supply ? Math.max(0, gun.def.supply - gun.ammo) : null;
+    });
     p.cd = p.reloadT = p.swapT = 0;
     p.burst = null;
     p.mats = Math.min(MAX_MATS, START_MATS + p.buffs.mats);
@@ -375,9 +379,19 @@ function selectSlot(g, p, slot) {
   if (gunOf(p).ammo <= 0) startReload(g, p);
 }
 
+// a limited-supply gun with nothing loaded and nothing spare
+export const isOut = (gun) => gun.ammo <= 0 && gun.reserve !== null && gun.reserve !== undefined && gun.reserve <= 0;
+
 function startReload(g, p) {
   const gun = gunOf(p);
   if (p.reloadT > 0 || gun.ammo >= magOf(p, gun)) return;
+  if (gun.reserve !== null && gun.reserve !== undefined && gun.reserve <= 0) {
+    // out of supply for this round: switch to the other gun if it can shoot
+    const other = p.guns[1 - p.slot];
+    if (gun.ammo <= 0 && other && !isOut(other)) selectSlot(g, p, 1 - p.slot);
+    else emit(g, { t: "deny", pid: p.id, team: p.team });
+    return;
+  }
   p.reloadT = gun.def.reload * p.buffs.reload;
   p.burst = null;
   emit(g, { t: "reload", pid: p.id, team: p.team });
@@ -467,20 +481,28 @@ const clampY = (y) => Math.max(0.3, Math.min(GH - 0.3, y));
 function fireRail(g, p, def, angle) {
   const dx = Math.cos(angle);
   const dy = Math.sin(angle);
+  // The beam punches through ONE wall (destroying the tiles it passes
+  // through) and is stopped by the next wall it meets, or by rock.
   const pierced = [];
+  let firstWall = null;
   const stop = raycast(g.world, p.x, p.y, dx, dy, def.range, (w, cx, cy) => {
     if (!inBounds(cx, cy) || isRock(w, cx, cy)) return true;
-    if (tileAt(w, cx, cy)) pierced.push([cx, cy]);
+    const t = tileAt(w, cx, cy);
+    if (!t || t.wall.edit === t.i) return false; // open floor / an edited gap
+    if (!firstWall) firstWall = t.wall;
+    if (t.wall !== firstWall) return true;       // a second wall: stop here
+    pierced.push([cx, cy]);
     return false;
   });
   const len = stop.hit ? stop.dist : def.range;
-  for (const [cx, cy] of pierced) hitTile(g, cx, cy, def.dmg * def.tile, p.id);
+  for (const [cx, cy] of pierced) hitTile(g, cx, cy, 1e6, p.id); // blown through
+  if (stop.hit && tileAt(g.world, stop.cx, stop.cy)) hitTile(g, stop.cx, stop.cy, def.dmg * def.tile, p.id);
   for (const e of enemiesOf(g, p)) {
     const t = e.alive ? segCircle(p.x, p.y, dx, dy, len, e.x, e.y, e.r) : -1;
     if (t < 0) continue;
-    // each wall tile the beam went through before this target weakens it
-    const walls = pierced.filter(([cx, cy]) => Math.hypot(cx + 0.5 - p.x, cy + 0.5 - p.y) < t).length;
-    damagePlayer(g, e, def.dmg * Math.pow(1 - (def.pierceLoss || 0), walls), p);
+    // weaker after punching through the wall
+    const through = pierced.some(([cx, cy]) => Math.hypot(cx + 0.5 - p.x, cy + 0.5 - p.y) < t);
+    damagePlayer(g, e, def.dmg * (through ? 1 - (def.pierceLoss || 0) : 1), p);
   }
   g.beams.push({
     x0: p.x + dx * 0.4, y0: p.y + dy * 0.4,
@@ -521,7 +543,11 @@ function updatePlayers(g, dt) {
       if (p.reloadT <= 0) {
         p.reloadT = 0;
         const gun = gunOf(p);
-        gun.ammo = magOf(p, gun);
+        if (gun.reserve !== null && gun.reserve !== undefined) {
+          const take = Math.min(magOf(p, gun) - gun.ammo, gun.reserve);
+          gun.ammo += take;
+          gun.reserve -= take;
+        } else gun.ammo = magOf(p, gun);
         emit(g, { t: "reloaded", pid: p.id, team: p.team });
       }
     }

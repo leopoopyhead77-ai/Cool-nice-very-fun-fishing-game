@@ -1414,7 +1414,9 @@ export function createRenderer(canvas) {
         const fit = Math.min(1, (r.w - 34 * u * s) / ctx.measureText(name).width);
         label(name, tx, r.y + r.h * 0.34, 8.5 * u * s * fit, active ? "#fff" : "rgba(255,255,255,0.65)", "left", 800);
         const reloading = active && p.reloadT > 0;
-        const txt = reloading ? "RELOADING…" : `${gun.ammo} / ${magOf(p, gun)}`;
+        const txt = reloading ? "RELOADING…" : (gun.reserve !== null && gun.reserve !== undefined
+          ? (gun.ammo <= 0 && gun.reserve <= 0 ? "OUT" : `${gun.ammo} · ${gun.reserve} left`)
+          : `${gun.ammo} / ${magOf(p, gun)}`);
         label(txt, tx, r.y + r.h * 0.7, 9.5 * u * s, gun.ammo === 0 || reloading ? "#ffb36b" : tier, "left", 800);
         if (reloading) {
           const k = 1 - p.reloadT / (gun.def.reload * (p.buffs ? p.buffs.reload : 1));
@@ -1484,7 +1486,9 @@ export function createRenderer(canvas) {
         const fit = Math.min(1, (r.w - 34 * u * s) / ctx.measureText(name).width);
         label(name, tx, r.y + r.h * 0.34, 8.5 * u * s * fit, active ? "#fff" : "rgba(255,255,255,0.65)", "left", 800);
         const reloading = active && p.reloadT > 0;
-        const txt = reloading ? "RELOADING…" : `${gun.ammo} / ${magOf(p, gun)}`;
+        const txt = reloading ? "RELOADING…" : (gun.reserve !== null && gun.reserve !== undefined
+          ? (gun.ammo <= 0 && gun.reserve <= 0 ? "OUT" : `${gun.ammo} · ${gun.reserve} left`)
+          : `${gun.ammo} / ${magOf(p, gun)}`);
         label(txt, tx, r.y + r.h * 0.7, 9.5 * u * s, gun.ammo === 0 || reloading ? "#ffb36b" : tier, "left", 800);
         if (reloading) {
           const k = 1 - p.reloadT / (gun.def.reload * (p.buffs ? p.buffs.reload : 1));

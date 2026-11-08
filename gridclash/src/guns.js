@@ -63,8 +63,8 @@ export const GUNS = [
   {
     id: "grenade", name: "Grenade Launcher", type: "lob", tier: "Epic",
     dmg: 42, cd: 1.3, burst: 1, gap: 0, pellets: 1, spread: 0,
-    speed: 10.5, range: 9.5, mag: 3, reload: 2.6, tile: 1.9, pref: 7,
-    radius: 1.3, color: "#a4ff5c", desc: "Lobs over walls and splashes. Aim distance = throw distance.",
+    speed: 10.5, range: 9.5, mag: 3, reload: 2.6, tile: 1.9, pref: 7, supply: 6,
+    radius: 1.3, color: "#a4ff5c", desc: "Lobs over walls and splashes. Only 6 grenades per round.",
   },
   {
     id: "rocket", name: "Rocket Launcher", type: "rocket", tier: "Legendary",
@@ -76,7 +76,7 @@ export const GUNS = [
     id: "rail", name: "Railgun", type: "rail", tier: "Mythic",
     dmg: 42, cd: 2.2, burst: 1, gap: 0, pellets: 1, spread: 0,
     speed: 0, range: 30, mag: 2, reload: 2.9, tile: 0.6, pref: 11, pierceLoss: 0.3,
-    color: "#5cf6ff", desc: "Instant beam through builds — loses 30% damage per wall it pierces. Stopped by rock.",
+    color: "#5cf6ff", desc: "Instant beam that blasts through ONE wall (30% weaker after). The next wall or rock stops it.",
   },
   {
     id: "flamer", name: "Flamethrower", type: "bullet", tier: "Rare",
@@ -123,8 +123,8 @@ export const GUNS = [
   {
     id: "cluster", name: "Cluster Launcher", type: "lob", tier: "Legendary",
     dmg: 30, cd: 1.7, burst: 1, gap: 0, pellets: 1, spread: 0,
-    speed: 10.5, range: 9, mag: 2, reload: 2.8, tile: 1.5, pref: 7,
-    radius: 0.95, cluster: 4, color: "#ffb04a", desc: "Lobbed bomb that bursts into 4 bomblets.",
+    speed: 10.5, range: 9, mag: 2, reload: 2.8, tile: 1.5, pref: 7, supply: 4,
+    radius: 0.95, cluster: 4, color: "#ffb04a", desc: "Lobbed bomb that bursts into 4 bomblets. Only 4 per round.",
   },
 ];
 
