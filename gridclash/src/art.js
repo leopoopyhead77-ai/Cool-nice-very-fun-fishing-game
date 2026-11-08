@@ -14,6 +14,7 @@ const LINE = "rgba(5,7,12,0.85)";
 export const GUN_LEN = {
   pistol: 0.56, revolver: 0.62, smg: 0.72, ar: 0.92, burst: 0.86, shotgun: 0.98,
   sniper: 1.18, minigun: 0.96, grenade: 0.86, rocket: 1.12, rail: 1.06, flamer: 0.92,
+  akimbo: 0.6, dmr: 1.02, crossbow: 0.9, dbarrel: 0.92, frost: 0.9, ricochet: 0.84, cluster: 0.92,
 };
 
 // Draws gun `id` along +x from the origin (stock / grip end) to x = L (muzzle),
@@ -187,6 +188,96 @@ export function drawGun(ctx, id, L, light = false) {
       ctx.beginPath();
       ctx.arc(1.03 * s, -0.06 * s, 0.035 * s, 0, Math.PI * 2);
       ctx.fill();
+      break;
+    case "akimbo": {
+      // two pistols, one behind the other
+      for (const [ox, oy, a] of [[0.0, -0.16, 0.55], [0.1, 0.08, 1]]) {
+        ctx.save();
+        ctx.globalAlpha *= a;
+        P([[0.1 + ox, 0.0 + oy], [0.32 + ox, 0.0 + oy], [0.27 + ox, 0.3 + oy], [0.07 + ox, 0.3 + oy]], BODY);
+        R(0.08 + ox, -0.17 + oy, 0.74, 0.18, acc, 0.03);
+        R(0.72 + ox, -0.1 + oy, 0.12, 0.08, DARK);
+        ctx.restore();
+      }
+      break;
+    }
+    case "dmr":
+      P([[0.0, -0.08], [0.24, -0.13], [0.24, 0.05], [0.04, 0.14], [0.0, 0.14]], BODY);  // stock
+      R(0.22, -0.15, 0.36, 0.19, BODY, 0.02);                                     // receiver
+      R(0.56, -0.13, 0.26, 0.12, acc, 0.03);                                      // handguard
+      R(0.8, -0.1, 0.2, 0.05, METAL);                                             // barrel
+      R(0.34, 0.04, 0.1, 0.24, METAL, 0.02);                                      // straight mag
+      P([[0.26, 0.04], [0.34, 0.04], [0.31, 0.26], [0.23, 0.26]], BODY);
+      R(0.3, -0.28, 0.24, 0.09, DARK, 0.04);                                      // scope
+      O(0.54, -0.235, 0.025, "#7cd3ff");
+      shine(0.24, -0.13, 0.5);
+      break;
+    case "crossbow": {
+      R(0.0, -0.07, 0.62, 0.1, "#7a4f2c", 0.03);                                  // wooden stock / rail
+      R(0.55, -0.06, 0.35, 0.07, METAL);
+      // bow limbs
+      ctx.beginPath();
+      ctx.moveTo(0.72 * s, -0.36 * s);
+      ctx.quadraticCurveTo(0.86 * s, -0.02 * s, 0.72 * s, 0.32 * s);
+      ctx.lineWidth = Math.max(1, s * 0.06);
+      ctx.strokeStyle = acc;
+      ctx.stroke();
+      ctx.lineWidth = Math.max(0.6, s * 0.015);
+      ctx.strokeStyle = "#e9e4d6";
+      ctx.beginPath();                                                             // string
+      ctx.moveTo(0.72 * s, -0.36 * s);
+      ctx.lineTo(0.42 * s, -0.02 * s);
+      ctx.lineTo(0.72 * s, 0.32 * s);
+      ctx.stroke();
+      ctx.lineWidth = Math.max(0.6, s * 0.025);
+      ctx.strokeStyle = LINE;
+      R(0.42, -0.04, 0.6, 0.035, "#e9e4d6");                                      // bolt
+      P([[1.02, -0.07], [1.08, -0.02], [1.02, 0.03]], METAL);
+      P([[0.2, 0.03], [0.3, 0.03], [0.27, 0.26], [0.17, 0.26]], BODY);
+      break;
+    }
+    case "dbarrel":
+      P([[0.0, -0.06], [0.28, -0.12], [0.28, 0.06], [0.0, 0.16]], "#7a4f2c");    // stock
+      R(0.26, -0.13, 0.12, 0.2, METAL, 0.02);                                     // breech
+      R(0.38, -0.14, 0.62, 0.065, METAL);                                         // two barrels
+      R(0.38, -0.07, 0.62, 0.065, METAL);
+      R(0.42, -0.005, 0.28, 0.06, "#7a4f2c", 0.02);                               // fore-end
+      R(0.36, -0.2, 0.04, 0.07, acc);                                             // hammers
+      R(0.31, -0.2, 0.04, 0.07, acc);
+      shine(0.4, -0.13, 0.58);
+      break;
+    case "frost":
+      R(0.0, -0.08, 0.2, 0.11, METAL, 0.02);
+      R(0.18, -0.17, 0.46, 0.22, BODY, 0.05);                                     // body
+      R(0.64, -0.12, 0.2, 0.12, METAL, 0.02);
+      P([[0.84, -0.16], [1.0, -0.2], [1.0, 0.08], [0.84, 0.04]], acc);            // flared emitter
+      O(0.4, 0.13, 0.11, acc);                                                    // coolant canister
+      ctx.save();
+      ctx.shadowColor = acc;
+      ctx.shadowBlur = s * 0.1;
+      R(0.24, -0.12, 0.34, 0.04, "#e8fbff");
+      ctx.restore();
+      P([[0.22, 0.05], [0.3, 0.05], [0.28, 0.26], [0.2, 0.26]], BODY);
+      break;
+    case "ricochet":
+      P([[0.0, -0.04], [0.16, -0.16], [0.6, -0.18], [0.7, -0.06], [0.6, 0.06], [0.16, 0.06]], BODY);
+      R(0.66, -0.11, 0.3, 0.06, METAL);
+      ctx.save();
+      ctx.shadowColor = acc;
+      ctx.shadowBlur = s * 0.12;
+      O(0.38, -0.06, 0.08, acc);                                                  // energy cell
+      O(0.98, -0.08, 0.04, acc);
+      ctx.restore();
+      P([[0.22, 0.05], [0.32, 0.05], [0.29, 0.28], [0.19, 0.28]], BODY);
+      R(0.2, -0.24, 0.2, 0.06, acc, 0.03);
+      break;
+    case "cluster":
+      R(0.0, -0.06, 0.18, 0.1, METAL);
+      R(0.18, -0.2, 0.74, 0.28, "#5a4a32", 0.06);                                 // fat tube
+      R(0.86, -0.22, 0.12, 0.32, DARK, 0.02);
+      for (let i = 0; i < 3; i++) O(0.36 + i * 0.16, -0.06, 0.06, acc);           // visible bomblets
+      P([[0.42, 0.08], [0.52, 0.08], [0.49, 0.32], [0.39, 0.32]], BODY);
+      R(0.6, -0.31, 0.12, 0.11, DARK, 0.02);
       break;
     default:
       R(0, -0.1, 1, 0.2, acc);

@@ -81,24 +81,31 @@ The bot picks cards too. It prefers rarer cards, and damage and shield cards.
   flamethrower are best for breaking builds, and the railgun shoots straight
   through them.
 
-## The armory (12 guns)
-
-Pick any two on the loadout screen.
+## The armory (19 guns)
 
 | Gun | Tier | Style |
 |---|---|---|
 | Pistol | Common | fast single shots, fast reload |
 | SMG | Uncommon | 6-round spray per release |
 | Revolver | Uncommon | heavy, pinpoint single shots |
+| Akimbo Pistols | Uncommon | two pistols, 4 quick shots per release |
 | Assault Rifle | Rare | 4-round burst, good at every range |
 | Burst Rifle | Rare | tight 3-round burst |
-| Flamethrower | Rare | short-range torrent, burns walls |
+| Marksman Rifle | Rare | fast, accurate single shots at long range |
+| Crossbow | Rare | slow, heavy bolts; lead your target |
+| Frost Ray | Rare | chilling stream that **slows** targets by 40% |
+| Flamethrower | Rare | short-range torrent that **sets targets on fire** (damage over time) |
 | Pump Shotgun | Epic | 9-pellet cone |
+| Double Barrel | Epic | both barrels back to back, point blank |
 | Minigun | Epic | 14 rounds per release, melts builds |
-| Grenade Launcher | Epic | lobs over walls; aim distance = throw distance |
-| Sniper | Legendary | 82 damage, zero spread |
+| Ricochet Blaster | Epic | bolts **bounce off walls** twice, so you can hit people behind cover |
+| Grenade Launcher | Epic | lobs over walls; aim distance = throw distance *(nerfed: 42 dmg, smaller blast, slower shells)* |
+| Sniper | Legendary | huge single shots *(nerfed: 66 dmg, slower to cycle, 3-round mag)* |
 | Rocket Launcher | Legendary | explodes on contact, deletes walls |
-| Railgun | Mythic | instant beam that pierces builds |
+| Cluster Launcher | Legendary | lobbed bomb that **bursts into 4 bomblets** |
+| Railgun | Mythic | instant beam through builds, **loses 30% damage per wall** *(nerfed: 42 dmg, slower, 2-round mag)* |
+
+Being slowed shows as an icy ring and burning shows flames on the player. When you're low on health, the screen edges glow red.
 
 ## Match rules
 

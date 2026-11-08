@@ -138,6 +138,7 @@ export function encodeSnapshot(g, n, extra) {
       p.guns[0].ammo, p.guns[1].ammo, r2(p.reloadT), r2(p.cd), r2(p.swapT),
       Math.floor(p.mats), r2(p.hitFlash), r2(p.recoil), p.burst ? 1 : 0,
       [p.stats.dmg, p.stats.shots, p.stats.hits, p.stats.walls, p.stats.edits],
+      r2(p.slowT || 0), r2(p.burnT || 0), Math.round(p.shield || 0), p.maxShield || 0, p.maxHp || 100,
     ]),
     b: g.bullets.map((b) => (b.kind === "lob"
       ? [0, GUN_INDEX[b.def.id], b.owner, r2(b.sx), r2(b.sy), r2(b.tx), r2(b.ty), r2(b.t), r2(b.T)]
@@ -183,6 +184,7 @@ export function applySnapshot(g, s) {
     p.recoil = Math.max(p.recoil, a[19]);
     p.burst = a[20] ? {} : null;
     [p.stats.dmg, p.stats.shots, p.stats.hits, p.stats.walls, p.stats.edits] = a[21];
+    if (a.length > 22) [p.slowT, p.burnT, p.shield, p.maxShield, p.maxHp] = a.slice(22, 27);
   });
   g.bullets = s.b.map((a) => {
     const def = GUNS[a[1]];

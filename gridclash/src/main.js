@@ -545,8 +545,8 @@ function click() {
 
 function botLoadout() {
   // the bot gets a sensible pair: one close-range, one long-range gun
-  const close = ["shotgun", "smg", "flamer", "minigun", "pistol"];
-  const far = ["ar", "burst", "sniper", "revolver", "rocket", "grenade", "rail"];
+  const close = ["shotgun", "smg", "flamer", "minigun", "pistol", "dbarrel", "frost", "akimbo"];
+  const far = ["ar", "burst", "sniper", "revolver", "rocket", "grenade", "rail", "dmr", "crossbow", "ricochet", "cluster"];
   const pick = (a) => a[Math.floor(Math.random() * a.length)];
   return [pick(far), pick(close)];
 }

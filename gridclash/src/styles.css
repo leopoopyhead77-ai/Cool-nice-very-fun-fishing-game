@@ -231,7 +231,10 @@ body.is-online .online-only { display: block; }
 .sel-head.t1 b { color: var(--red); }
 .sel-head span { color: var(--muted); font-size: 12px; font-weight: 800; }
 .sel-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; flex: 1; min-height: 0; overflow-y: auto; align-content: start; }
-.sel-wrap.one .sel-grid { grid-template-columns: repeat(6, 1fr); }
+.sel-wrap.one .sel-grid { grid-template-columns: repeat(7, 1fr); }
+.sel-wrap.two .sel-grid { grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.sel-wrap.two .item { padding: 4px 2px 3px; }
+.sel-wrap.two .item b { font-size: 9px; }
 .item {
   position: relative; font: inherit; color: var(--text); cursor: pointer; text-align: center;
   background: var(--card); border: 1.5px solid var(--line); border-bottom: 3px solid var(--c);
@@ -249,7 +252,11 @@ body.is-online .online-only { display: block; }
 .sel-ready { min-width: 110px; }
 .sel-ready:disabled { opacity: 0.4; }
 .sel-back { position: fixed; left: max(8px, env(safe-area-inset-left)); bottom: 8px; z-index: 6; background: rgba(8,12,20,0.85); }
-.sel-wrap.two ~ .sel-back { bottom: auto; top: 50%; transform: translateY(-50%); }
+.sel-wrap.two ~ .sel-back {
+  bottom: auto; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 34px; height: 34px; padding: 0; border-radius: 50%; font-size: 0;
+}
+.sel-wrap.two ~ .sel-back::after { content: "✕"; font-size: 15px; }
 .gun-top .gicon { width: 44px; height: 19px; object-fit: contain; }
 
 #buildStyle button { display: flex; flex-direction: column; align-items: center; line-height: 1.1; text-transform: none; }

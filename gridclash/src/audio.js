@@ -66,6 +66,13 @@ const SHOT = {
   rocket: () => { noise(0.3, 700, 0.6, 0.35); tone(160, 60, 0.25, 0.12, "sawtooth"); },
   rail: () => { tone(1800, 200, 0.28, 0.14, "sawtooth"); noise(0.2, 5000, 2, 0.2, "bandpass"); },
   flamer: () => noise(0.06, 900, 0.5, 0.12, "bandpass"),
+  akimbo: () => { noise(0.07, 2900, 1, 0.26); tone(460, 140, 0.05, 0.06); },
+  dmr: () => { noise(0.12, 2000, 0.9, 0.38); tone(380, 90, 0.08, 0.08); },
+  crossbow: () => { tone(240, 120, 0.12, 0.12, "triangle"); noise(0.05, 3000, 2, 0.1, "bandpass"); },
+  dbarrel: () => { noise(0.28, 1100, 0.6, 0.6); tone(120, 45, 0.18, 0.16, "sawtooth"); },
+  frost: () => { tone(1600, 1200, 0.05, 0.05, "sine"); noise(0.05, 4000, 3, 0.06, "bandpass"); },
+  ricochet: () => { tone(1200, 600, 0.09, 0.08, "square"); },
+  cluster: () => { tone(200, 100, 0.14, 0.15, "triangle"); noise(0.1, 800, 1, 0.22); },
 };
 
 // Plays the sounds for one frame's worth of game events.
@@ -82,6 +89,7 @@ export function playEvents(events, me, myTeam = me) {
         else tone(1400, 900, 0.05, 0.08, "triangle");
         break;
       case "tileHit": noise(0.04, 1200, 2, 0.08, "bandpass"); break;
+      case "bounce": tone(1800, 2400, 0.04, 0.05, "triangle"); break;
       case "tileBreak": noise(0.18, 600, 1, 0.3); tone(200, 80, 0.12, 0.08, "triangle"); break;
       case "build":
         if (mine) vibrate(12);

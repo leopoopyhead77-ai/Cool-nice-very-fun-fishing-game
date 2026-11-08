@@ -11,7 +11,7 @@
     "balance": "node build/balance.mjs",
     "test": "node build/smoke.mjs && node build/bridge-test.mjs && node build/rebirth-test.mjs",
     "clash:build": "node gridclash/build/build.mjs",
-    "clash:test": "node gridclash/build/sim.mjs && node gridclash/build/build.mjs && node gridclash/build/smoke.mjs",
+    "clash:test": "node gridclash/build/mechanics.mjs && node gridclash/build/sim.mjs && node gridclash/build/build.mjs && node gridclash/build/smoke.mjs",
     "clash:icon": "node gridclash/build/icon.mjs",
     "clash:apk": "node gridclash/build/build.mjs && bash gridclash/build/apk.sh local && bash gridclash/build/apk.sh online",
     "clash:online": "node gridclash/build/build.mjs && node gridclash/build/online-test.mjs && RELAY_ONLY=1 node gridclash/build/online-test.mjs",

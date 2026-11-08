@@ -143,6 +143,9 @@ function resetRound(g) {
     p.maxShield = p.buffs.shield;
     p.shield = p.maxShield;
     p.calmT = 0;
+    p.slowT = 0;
+    p.burnT = 0;
+    p.burnAcc = 0;
     p.alive = true;
     p.guns.forEach((gun) => (gun.ammo = magOf(p, gun)));
     p.cd = p.reloadT = p.swapT = 0;
@@ -302,7 +305,7 @@ function applyCommand(g, p, cmd, dt) {
     mx /= ml;
     my /= ml;
   }
-  const speed = MOVE_SPEED * p.buffs.speed * (cmd.aiming ? 0.82 : 1);
+  const speed = MOVE_SPEED * p.buffs.speed * (cmd.aiming ? 0.82 : 1) * (p.slowT > 0 ? 0.6 : 1);
   const k = Math.min(1, dt * 14);
   p.vx += (mx * speed - p.vx) * k;
   p.vy += (my * speed - p.vy) * k;
@@ -473,7 +476,11 @@ function fireRail(g, p, def, angle) {
   const len = stop.hit ? stop.dist : def.range;
   for (const [cx, cy] of pierced) hitTile(g, cx, cy, def.dmg * def.tile, p.id);
   for (const e of enemiesOf(g, p)) {
-    if (e.alive && segCircle(p.x, p.y, dx, dy, len, e.x, e.y, e.r) >= 0) damagePlayer(g, e, def.dmg, p);
+    const t = e.alive ? segCircle(p.x, p.y, dx, dy, len, e.x, e.y, e.r) : -1;
+    if (t < 0) continue;
+    // each wall tile the beam went through before this target weakens it
+    const walls = pierced.filter(([cx, cy]) => Math.hypot(cx + 0.5 - p.x, cy + 0.5 - p.y) < t).length;
+    damagePlayer(g, e, def.dmg * Math.pow(1 - (def.pierceLoss || 0), walls), p);
   }
   g.beams.push({
     x0: p.x + dx * 0.4, y0: p.y + dy * 0.4,
@@ -494,6 +501,16 @@ function updatePlayers(g, dt) {
     collideCircle(g.world, p);
 
     p.mats = Math.min(MAX_MATS, p.mats + MATS_REGEN * p.buffs.matsRegen * dt);
+    if (p.slowT > 0) p.slowT = Math.max(0, p.slowT - dt);
+    if (p.burnT > 0) {
+      p.burnT -= dt;
+      p.burnAcc = (p.burnAcc || 0) + dt;
+      if (p.burnAcc >= 0.5) {
+        p.burnAcc -= 0.5;
+        damagePlayer(g, p, p.burnDps * 0.5, g.players[p.burnBy]);
+      }
+      if (p.burnT <= 0) p.burnAcc = 0;
+    }
     // regen card: heals after 3 s without taking damage
     p.calmT += dt;
     if (p.buffs.regen > 0 && p.calmT > 3 && p.hp < p.maxHp) p.hp = Math.min(p.maxHp, p.hp + p.buffs.regen * dt);
@@ -614,9 +631,34 @@ function updateBullets(g, dt) {
     const owner = g.players[b.owner];
     if (target) {
       if (b.kind === "rocket") explode(g, b.x, b.y, b.def, b.owner);
-      else damagePlayer(g, target, b.dmg, owner);
-      spark(g, b.x, b.y, b.def.flame ? "#ff9a3c" : "#ff5a5a", 4);
+      else {
+        damagePlayer(g, target, b.dmg, owner);
+        // status effects
+        if (b.def.slow) target.slowT = Math.max(target.slowT || 0, b.def.slow);
+        if (b.def.burn) {
+          target.burnT = 2;
+          target.burnBy = b.owner;
+          target.burnDps = b.def.burn;
+        }
+      }
+      spark(g, b.x, b.y, b.def.flame ? "#ff9a3c" : b.def.slow ? "#bff4ff" : "#ff5a5a", 4);
       g.bullets.splice(i, 1);
+    } else if (ray.hit && ray.dist <= len && b.def.bounce && (b.bounces || 0) < b.def.bounce) {
+      // ricochet: chip the wall, then reflect off the face it hit
+      hitTile(g, ray.cx, ray.cy, b.dmg * b.def.tile * 0.5, b.owner);
+      spark(g, b.x, b.y, b.def.color, 3);
+      const px = Math.floor(b.x - b.dx * 0.01);
+      const py = Math.floor(b.y - b.dy * 0.01);
+      if (px !== ray.cx) b.dx = -b.dx;
+      if (py !== ray.cy) b.dy = -b.dy;
+      if (px === ray.cx && py === ray.cy) {
+        b.dx = -b.dx;
+        b.dy = -b.dy;
+      }
+      b.x += b.dx * 0.02;
+      b.y += b.dy * 0.02;
+      b.bounces = (b.bounces || 0) + 1;
+      emit(g, { t: "bounce" });
     } else if (ray.hit && ray.dist <= len) {
       if (b.kind === "rocket") {
         explode(g, b.x - b.dx * 0.05, b.y - b.dy * 0.05, b.def, b.owner);
@@ -650,7 +692,7 @@ function hitTile(g, cx, cy, amount, byPid) {
   }
 }
 
-function explode(g, x, y, def, ownerId) {
+function explode(g, x, y, def, ownerId, sub = false) {
   const R = def.radius;
   const owner = g.players[ownerId];
   for (const p of g.players) {
@@ -672,6 +714,16 @@ function explode(g, x, y, def, ownerId) {
     }
   }
   g.booms.push({ x, y, R, t: 0, life: 0.45, color: def.color });
+  // cluster bombs burst into bomblets around the impact
+  if (def.cluster && !sub) {
+    for (let k = 0; k < def.cluster; k++) {
+      const a = (k / def.cluster) * Math.PI * 2 + g.rng() * 0.6;
+      const d = 1.1 + g.rng() * 0.5;
+      const bx = Math.max(0.3, Math.min(GW - 0.3, x + Math.cos(a) * d));
+      const by = Math.max(0.3, Math.min(GH - 0.3, y + Math.sin(a) * d));
+      explode(g, bx, by, def, ownerId, true);
+    }
+  }
   for (let k = 0; k < 18; k++) {
     const a = g.rng() * Math.PI * 2;
     const s = 2 + g.rng() * 6;
@@ -943,7 +995,7 @@ export function predictMove(g, p, mx, my, aiming, dt) {
     mx /= ml;
     my /= ml;
   }
-  const speed = MOVE_SPEED * (p.buffs ? p.buffs.speed : 1) * (aiming ? 0.82 : 1);
+  const speed = MOVE_SPEED * (p.buffs ? p.buffs.speed : 1) * (aiming ? 0.82 : 1) * (p.slowT > 0 ? 0.6 : 1);
   const k = Math.min(1, dt * 14);
   p.vx += (mx * speed - p.vx) * k;
   p.vy += (my * speed - p.vy) * k;

@@ -394,6 +394,31 @@ export function createRenderer(canvas) {
     ctx.beginPath();
     ctx.arc(x + Math.cos(a) * r * 0.45, y + Math.sin(a) * r * 0.45, r * 0.2, 0, Math.PI * 2);
     ctx.fill();
+    // status effects
+    if (p.slowT > 0) {
+      ctx.fillStyle = "rgba(160,230,255,0.45)";
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(200,245,255,0.9)";
+      ctx.lineWidth = Math.max(1.5, TS * 0.07);
+      ctx.setLineDash([TS * 0.12, TS * 0.08]);
+      ctx.beginPath();
+      ctx.arc(x, y, r + TS * 0.12, g.time * 2, g.time * 2 + Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    if (p.burnT > 0) {
+      for (let k = 0; k < 3; k++) {
+        const a2 = g.time * 9 + k * 2.1;
+        const fx = x + Math.cos(a2) * r * 0.6;
+        const fy = y - r * 0.4 - Math.abs(Math.sin(a2 * 1.3)) * TS * 0.35;
+        ctx.fillStyle = k % 2 ? "rgba(255,200,80,0.85)" : "rgba(255,110,40,0.8)";
+        ctx.beginPath();
+        ctx.arc(fx, fy, TS * (0.09 + 0.04 * Math.sin(a2 * 2)), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
     if (p.hitFlash > 0) {
       ctx.fillStyle = `rgba(255,255,255,${p.hitFlash * 0.7})`;
       ctx.beginPath();
@@ -490,6 +515,25 @@ export function createRenderer(canvas) {
       }
       const x = sx(b.x);
       const y = sy(b.y);
+      if (b.def.slow) {
+        // frost: icy shards
+        ctx.fillStyle = "rgba(190,240,255,0.85)";
+        ctx.beginPath();
+        ctx.arc(x, y, TS * (0.1 + Math.min(0.12, b.age * 0.3)), 0, Math.PI * 2);
+        ctx.fill();
+        continue;
+      }
+      if (b.def.bounce) {
+        ctx.save();
+        ctx.shadowColor = b.def.color;
+        ctx.shadowBlur = TS * 0.4;
+        ctx.fillStyle = b.def.color;
+        ctx.beginPath();
+        ctx.arc(x, y, TS * 0.13, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        continue;
+      }
       if (b.def.flame) {
         const k = Math.min(1, b.age / 0.4);
         ctx.fillStyle = `rgba(255,${Math.round(200 - k * 120)},60,${0.85 - k * 0.5})`;
@@ -1517,6 +1561,20 @@ export function createRenderer(canvas) {
     for (const q of g.players) drawPlayer(g, q);
     drawFx(g);
     ctx.restore();
+
+    // low health: red glow at the screen edges
+    const me = g.players[meta.local ?? 0];
+    if (!v.L.pvp && meta.humans && meta.humans.length && me && me.alive && g.state === "fight") {
+      const k = me.hp / (me.maxHp || MAX_HP);
+      if (k < 0.35) {
+        const a = (0.35 - k) / 0.35 * (0.55 + 0.25 * Math.sin(g.time * 6));
+        const grad = ctx.createRadialGradient(v.W / 2, v.H / 2, Math.min(v.W, v.H) * 0.35, v.W / 2, v.H / 2, Math.max(v.W, v.H) * 0.7);
+        grad.addColorStop(0, "rgba(255,0,0,0)");
+        grad.addColorStop(1, `rgba(255,30,40,${a})`);
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, v.W, v.H);
+      }
+    }
 
     drawHud(g, input, meta);
   }
