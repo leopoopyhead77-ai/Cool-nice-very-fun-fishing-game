@@ -464,3 +464,110 @@ export function drawCardIcon(ctx, icon, s) {
   }
   ctx.restore();
 }
+
+// ---- power emblems ------------------------------------------------------------------
+
+// Draws a power emblem centred on (0, 0), about `s` across.
+export function drawPowerIcon(ctx, id, s) {
+  ctx.save();
+  const k = s / 100;
+  ctx.scale(k, k);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  switch (id) {
+    case "freeze": {
+      ctx.strokeStyle = "#bff4ff";
+      ctx.lineWidth = 9;
+      for (let i = 0; i < 6; i++) {
+        ctx.save();
+        ctx.rotate((i * Math.PI) / 3);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(0, -40);
+        ctx.moveTo(0, -24);
+        ctx.lineTo(-12, -34);
+        ctx.moveTo(0, -24);
+        ctx.lineTo(12, -34);
+        ctx.stroke();
+        ctx.restore();
+      }
+      break;
+    }
+    case "heal":
+      ctx.fillStyle = "rgba(90,255,150,0.25)";
+      ctx.beginPath();
+      ctx.arc(0, 0, 42, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#5aff96";
+      ctx.fillRect(-11, -32, 22, 64);
+      ctx.fillRect(-32, -11, 64, 22);
+      break;
+    case "flame":
+      ctx.fillStyle = "#ff6b2a";
+      ctx.beginPath();
+      ctx.moveTo(0, -44);
+      ctx.bezierCurveTo(30, -14, 34, 10, 22, 30);
+      ctx.bezierCurveTo(10, 46, -10, 46, -22, 30);
+      ctx.bezierCurveTo(-34, 10, -20, -6, -8, -16);
+      ctx.bezierCurveTo(-6, -2, 4, 4, 6, -8);
+      ctx.bezierCurveTo(8, -20, 2, -32, 0, -44);
+      ctx.fill();
+      ctx.fillStyle = "#ffd25a";
+      ctx.beginPath();
+      ctx.ellipse(0, 22, 11, 16, 0, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    case "dash":
+      ctx.fillStyle = "#ffe14d";
+      ctx.beginPath();
+      ctx.moveTo(40, 0);
+      ctx.lineTo(4, -28);
+      ctx.lineTo(4, -12);
+      ctx.lineTo(-18, -12);
+      ctx.lineTo(-18, 12);
+      ctx.lineTo(4, 12);
+      ctx.lineTo(4, 28);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "#ffe14d";
+      ctx.lineWidth = 7;
+      for (const [y, l] of [[-24, 18], [0, 12], [24, 18]]) {
+        ctx.beginPath();
+        ctx.moveTo(-44, y);
+        ctx.lineTo(-44 + l, y);
+        ctx.stroke();
+      }
+      break;
+    case "barrier":
+      ctx.strokeStyle = "#4fb0ff";
+      ctx.lineWidth = 8;
+      ctx.fillStyle = "rgba(79,176,255,0.25)";
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
+        ctx[i ? "lineTo" : "moveTo"](Math.cos(a) * 40, Math.sin(a) * 40);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "#cfe9ff";
+      ctx.beginPath();
+      ctx.arc(-12, -12, 7, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+  }
+  ctx.restore();
+}
+
+const powerIconCache = new Map();
+export function powerIconURL(id, size = 64) {
+  if (powerIconCache.has(id)) return powerIconCache.get(id);
+  const c = document.createElement("canvas");
+  c.width = c.height = size * 2;
+  const ctx = c.getContext("2d");
+  ctx.translate(size, size);
+  drawPowerIcon(ctx, id, size * 1.6);
+  const url = c.toDataURL("image/png");
+  powerIconCache.set(id, url);
+  return url;
+}

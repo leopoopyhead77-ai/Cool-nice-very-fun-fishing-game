@@ -155,4 +155,80 @@ let ok = true; const check = (c, m) => { console.log((c ? "ok   " : "FAIL ") + m
   check(lucky > normal + 0.25, `comeback hands are rarer on average (${normal.toFixed(2)} → ${lucky.toFixed(2)})`);
 }
 
+// ---- active powers -----------------------------------------------------------------
+{
+  const { POWER_BY_ID } = await import("../src/powers.js");
+  const mkp = (power, power2 = null, n = 2) => {
+    const g = createGame({
+      loadouts: Array.from({ length: n }, () => ["ar", "ar"]), names: ["a", "b", "c", "d"].slice(0, n),
+      controllers: Array.from({ length: n }, () => idle), seed: 4, powers: [power, power2, null, null].slice(0, n),
+    });
+    g.state = "fight";
+    g.players.forEach((p) => (p.powerCd = 0));
+    return g;
+  };
+  const press = (g, i = 0) => { g.controllers[i] = { poll: () => ({ mx: 0, my: 0, aiming: false, actions: [{ t: "power" }] }) }; step(g, 1 / 60); g.controllers[i] = idle; };
+  // freeze
+  {
+    const g = mkp("freeze");
+    const [a, b] = g.players;
+    a.x = 10; a.y = 13.5; b.x = 12; b.y = 13.5; // open floor, clear line between them
+    press(g);
+    check(b.frozenT > 0, "Freeze Blast freezes a nearby enemy");
+    g.controllers[1] = { poll: () => ({ mx: -1, my: 0, aiming: false, actions: [{ t: "fire", angle: Math.PI, mag: 1 }] }) };
+    const x0 = b.x, s0 = b.stats.shots;
+    for (let i = 0; i < 30; i++) step(g, 1 / 60);
+    check(b.x === x0 && b.stats.shots === s0, "a frozen player can't move or shoot");
+    g.controllers[1] = idle;
+    check(a.powerCd > POWER_BY_ID.freeze.cd - 1, `then the power is on cooldown (${a.powerCd.toFixed(1)}s)`);
+    press(g);
+    check(a.powerCd < POWER_BY_ID.freeze.cd && a.powerCd > 0, "pressing it again during cooldown does nothing");
+  }
+  // heal pool heals you and allies, not enemies
+  {
+    const g = createGame({ loadouts: [["ar", "ar"], ["ar", "ar"], ["ar", "ar"]], names: ["a", "b", "c"], teams: [0, 1, 0], controllers: [idle, idle, idle], seed: 4, powers: ["heal", null, null] });
+    g.state = "fight";
+    const [a, enemy, ally] = g.players;
+    a.powerCd = 0;
+    a.x = 10; a.y = 10; ally.x = 11; ally.y = 10; enemy.x = 10; enemy.y = 11;
+    for (const p of g.players) p.hp = 40;
+    press(g);
+    for (let i = 0; i < 60 * 2; i++) step(g, 1 / 60);
+    check(a.hp > 60 && ally.hp > 60 && enemy.hp === 40, `Heal Pool heals you and allies, not enemies (you ${Math.round(a.hp)}, ally ${Math.round(ally.hp)}, enemy ${enemy.hp})`);
+  }
+  // flaming bullets
+  {
+    const g = mkp("flame");
+    const [a, b] = g.players;
+    a.x = 6; a.y = 13.5; b.x = 9; b.y = 13.5;
+    press(g);
+    g.controllers[0] = { poll: () => ({ mx: 0, my: 0, aiming: false, actions: [{ t: "fire", angle: 0, mag: 1 }] }) };
+    step(g, 1 / 60);
+    g.controllers[0] = idle;
+    let burned = false;
+    for (let i = 0; i < 60; i++) { step(g, 1 / 60); if (b.burnT > 0) burned = true; }
+    check(burned, "Flaming Bullets set your targets on fire");
+  }
+  // dash
+  {
+    const g = mkp("dash");
+    const a = g.players[0];
+    a.x = 4; a.y = 13.5; a.facing = 0;
+    press(g);
+    for (let i = 0; i < 40; i++) step(g, 1 / 60);
+    check(a.x > 6.2, `Dash bursts you forward (${(a.x - 4).toFixed(1)} tiles)`);
+  }
+  // barrier
+  {
+    const g = mkp("barrier");
+    const [a, b] = g.players;
+    press(g);
+    const hp = a.hp;
+    a.x = 10; a.y = 10;
+    g.bullets.push({ kind: "bullet", owner: 1, def: b.guns[0].def, x: 9.2, y: 10, px: 0, py: 0, dx: 1, dy: 0, speed: 30, left: 3, dmg: 30, age: 0 });
+    for (let i = 0; i < 10; i++) step(g, 1 / 60);
+    check(a.hp === hp && a.barrier > 0 && a.barrier < 45, `Barrier soaks the hit (bubble ${a.barrier} left, health ${a.hp})`);
+  }
+}
+
 process.exit(ok ? 0 : 1);

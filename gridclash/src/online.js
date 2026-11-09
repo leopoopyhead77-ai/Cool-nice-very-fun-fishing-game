@@ -89,6 +89,7 @@ export function createGuestView(start, slot, guest, input) {
     teams: start.teams,
     seed: start.seed,
     map: start.map,
+    powers: start.powers,
     controllers: start.loadouts.map(() => ({ poll: () => ({ actions: [] }) })),
   });
   game.state = "countdown";

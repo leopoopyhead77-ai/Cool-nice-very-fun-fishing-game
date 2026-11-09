@@ -50,7 +50,7 @@ const freeze = () => page.evaluate(() => window.__clash.setPaused(true));
 const unfreeze = () => page.evaluate(() => window.__clash.setPaused(false));
 const stepN = (n) => page.evaluate((n) => window.__clash.step(n), n);
 const pads = () => page.evaluate(() => window.__clash.layout.pads.map((p) => ({
-  team: p.team, rot: p.rot, move: p.move, aim: p.aim, build: p.build, edit: p.edit, reset: p.reset,
+  team: p.team, rot: p.rot, move: p.move, aim: p.aim, build: p.build, edit: p.edit, reset: p.reset, power: p.power,
   slot0: { x: p.slot0.cx, y: p.slot0.cy }, slot1: { x: p.slot1.cx, y: p.slot1.cy },
 })));
 const cardRects = () => page.evaluate(() => window.__clash.cardRects());
@@ -65,11 +65,15 @@ check((await page.locator("#selP0 .item img").count()) === NGUNS, "every item ha
 await page.click('#selP0 .item[data-id="sniper"]');
 await page.click('#selP0 .item[data-id="smg"]');
 check((await page.locator("#selP0 .item.on").count()) === 2, "picking a third item swaps out the oldest (2 max)");
+check((await page.locator("#selP0 .pw").count()) === 5, "the pick screen offers 5 powers");
+await page.click('#selP0 .pw[data-pw="freeze"]');
+check(await page.locator('#selP0 .pw[data-pw="freeze"].on').count() === 1, "tapping a power picks it");
 await page.screenshot({ path: resolve(shots, "2-item-pick.png") });
 await page.click("#selP0 .sel-ready");
 await page.waitForTimeout(200);
 check(await page.evaluate(() => !!window.__clash.game), "FIGHT starts the match");
 check(JSON.stringify(await G("g.players[0].loadout")) === JSON.stringify(["sniper", "smg"]), "the match uses the picked items");
+check((await G("g.players[0].power")) === "freeze" && !!(await G("g.players[1].power")), "you bring your power; the bot gets one too");
 
 // buff cards before round 1
 await freeze();
@@ -104,8 +108,24 @@ await page.evaluate(() => {
 await stepN(20);
 check((await G("g.players[0].shield")) < 50 && (await G("g.players[0].hp")) === hp0, "damage hits the blue shield before health");
 
-// move
+// POWER button
 const P = (await pads())[0];
+await page.evaluate(() => {
+  const g = window.__clash.game;
+  const [a, b] = g.players;
+  a.powerCd = 0; a.x = 10; a.y = 13.5; b.x = 12; b.y = 13.5;
+});
+await tap(8, P.power.x, P.power.y);
+await stepN(1);
+check((await G("g.players[1].frozenT")) > 0 && (await G("g.players[0].powerCd")) > 10, "tapping POWER fires it (Freeze Blast) and starts the cooldown");
+await unfreeze();
+await page.waitForTimeout(200);
+await page.screenshot({ path: resolve(shots, "5b-power-freeze.png") });
+await freeze();
+await stepN(120);
+await page.evaluate(() => { const p = window.__clash.game.players[0]; p.x = 2.5; p.y = 10; });
+
+// move
 const x0 = await G("g.players[0].x");
 await touch("pointerdown", 1, P.move.x, P.move.y);
 await touch("pointermove", 1, P.move.x + 55, P.move.y);

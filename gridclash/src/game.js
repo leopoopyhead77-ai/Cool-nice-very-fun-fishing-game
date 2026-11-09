@@ -20,6 +20,7 @@
 import { GUN_BY_ID } from "./guns.js";
 import { baseBuffs, buffsFrom, dealHand, CARD_BY_ID, rarityRank } from "./cards.js";
 import { mapOf } from "./maps.js";
+import { POWER_BY_ID } from "./powers.js";
 import { initHazards, updateHazards, bulletHitsHazard, explodeHazards, checkTeleport, hurtPac } from "./hazards.js";
 import {
   GW, GH, WALL_COST, SPAWNS, MEDKIT_SPOTS,
@@ -73,13 +74,15 @@ function makePlayer(id, team, loadout, name) {
 // 4 players = 2v2 with ids 0,2 on blue and 1,3 on red.
 // cards: deal buff cards before every round (local app)
 // map: a map id from maps.js (default "arena")
-export function createGame({ loadouts, names, controllers, seed, teams, cards, map }) {
+// powers: an active power id per player (powers.js), optional
+export function createGame({ loadouts, names, controllers, seed, teams, cards, map, powers }) {
   const mapDef = mapOf(map);
   const tm = teams || loadouts.map((_, i) => i % 2);
   const g = {
     world: createWorld(mapDef),
     map: mapDef,
-    players: loadouts.map((l, i) => makePlayer(i, tm[i], l, names[i])),
+    players: loadouts.map((l, i) => Object.assign(makePlayer(i, tm[i], l, names[i]), { power: (powers && powers[i]) || null })),
+    pools: [], // heal pools on the floor
     controllers,
     useCards: !!cards,
     offers: [],   // per player: card ids on offer this round
@@ -121,6 +124,7 @@ function mulberry(a) {
 
 function resetRound(g) {
   clearWalls(g.world);
+  if (g.pools) g.pools.length = 0;
   initHazards(g);
   g.bullets.length = 0;
   g.beams.length = 0;
@@ -152,6 +156,13 @@ function resetRound(g) {
     p.slowT = 0;
     p.burnT = 0;
     p.burnAcc = 0;
+    // powers start part-charged each round
+    const pw = POWER_BY_ID[p.power];
+    p.powerCd = pw ? pw.cd * 0.35 : 0;
+    p.frozenT = 0;
+    p.flameT = 0;
+    p.barrier = 0;
+    p.barrierT = 0;
     p.alive = true;
     p.guns.forEach((gun) => {
       gun.ammo = magOf(p, gun);
@@ -263,6 +274,7 @@ export function step(g, dt) {
     });
     updatePlayers(g, dt);
     updateHazards(g, dt, HAZARD_API);
+    updatePools(g, dt);
     updateMedkits(g, dt);
     g.timeLeft -= dt;
     if (g.timeLeft <= 0 && g.state === "fight") {
@@ -310,6 +322,12 @@ function endRound(g, winner) {
 }
 
 function applyCommand(g, p, cmd, dt) {
+  if (p.frozenT > 0) {
+    // frozen solid: no moving, shooting, building or powers
+    p.vx = p.vy = 0;
+    p.burst = null;
+    return;
+  }
   let mx = cmd.mx || 0;
   let my = cmd.my || 0;
   const ml = Math.hypot(mx, my);
@@ -357,6 +375,9 @@ function handleAction(g, p, a) {
     // one-touch building: no mode switch needed
     case "qbuild":
       tryBuild(g, p, a);
+      break;
+    case "power":
+      usePower(g, p);
       break;
     case "qedit":
       tryEdit(g, p, a, true);
@@ -542,6 +563,13 @@ function updatePlayers(g, dt) {
 
     p.mats = Math.min(MAX_MATS, p.mats + MATS_REGEN * p.buffs.matsRegen * dt);
     if (p.slowT > 0) p.slowT = Math.max(0, p.slowT - dt);
+    p.powerCd = Math.max(0, (p.powerCd || 0) - dt);
+    if (p.frozenT > 0) p.frozenT = Math.max(0, p.frozenT - dt);
+    if (p.flameT > 0) p.flameT = Math.max(0, p.flameT - dt);
+    if (p.barrierT > 0) {
+      p.barrierT -= dt;
+      if (p.barrierT <= 0) p.barrier = 0;
+    }
     if (p.burnT > 0) {
       p.burnT -= dt;
       p.burnAcc = (p.burnAcc || 0) + dt;
@@ -694,6 +722,11 @@ function updateBullets(g, dt) {
           target.burnT = 2;
           target.burnBy = b.owner;
           target.burnDps = b.def.burn;
+        } else if (owner && owner.flameT > 0) {
+          // Flaming Bullets power
+          target.burnT = 2;
+          target.burnBy = b.owner;
+          target.burnDps = POWER_BY_ID.flame.burn;
         }
       }
       spark(g, b.x, b.y, b.def.flame ? "#ff9a3c" : b.def.slow ? "#bff4ff" : "#ff5a5a", 4);
@@ -800,7 +833,17 @@ function damagePlayer(g, p, amount, by) {
   if (p.buffs) amount *= 1 - p.buffs.armor;
   amount = Math.max(1, Math.round(amount));
   p.calmT = 0;
-  // the blue shield bar soaks damage first
+  // a Barrier power bubble soaks first, then the blue shield bar
+  if (p.barrier > 0) {
+    const b = Math.min(p.barrier, amount);
+    p.barrier -= b;
+    amount -= b;
+    if (amount <= 0) {
+      p.hitFlash = 0.5;
+      addText(g, p.x, p.y - 0.7, String(Math.round(b)), "#9fd2ff");
+      return;
+    }
+  }
   let shieldHit = 0;
   if (p.shield > 0) {
     shieldHit = Math.min(p.shield, amount);
@@ -839,6 +882,71 @@ function damagePlayer(g, p, amount, by) {
     // the round ends when only one team is left standing
     const standing = new Set(g.players.filter((q) => q.alive).map((q) => q.team));
     if (standing.size <= 1) endRound(g, standing.size ? [...standing][0] : -1);
+  }
+}
+
+// ---- active powers ------------------------------------------------------------
+
+export function usePower(g, p) {
+  const pw = POWER_BY_ID[p.power];
+  if (!pw || !p.alive || g.state !== "fight" || p.powerCd > 0 || p.frozenT > 0) return false;
+  p.powerCd = pw.cd;
+  emit(g, { t: "power", pid: p.id, team: p.team, power: pw.id, x: p.x, y: p.y });
+  const burst = (color, n, speed) => {
+    for (let k = 0; k < n; k++) {
+      const a = g.rng() * Math.PI * 2;
+      g.particles.push({
+        x: p.x, y: p.y, vx: Math.cos(a) * speed * (0.5 + g.rng()), vy: Math.sin(a) * speed * (0.5 + g.rng()),
+        life: 0.5 + g.rng() * 0.3, t: 0, size: 0.12, color,
+      });
+    }
+  };
+  switch (pw.id) {
+    case "freeze":
+      burst("#bff4ff", 30, 7);
+      g.booms.push({ x: p.x, y: p.y, R: pw.radius, t: 0, life: 0.5, color: "#9fe8ff", ice: true });
+      for (const e of enemiesOf(g, p)) {
+        if (!e.alive) continue;
+        if (Math.hypot(e.x - p.x, e.y - p.y) <= pw.radius + e.r && lineClear(g.world, p.x, p.y, e.x, e.y)) {
+          e.frozenT = pw.freeze;
+          e.burst = null;
+          addText(g, e.x, e.y - 0.8, "FROZEN", "#bff4ff");
+        }
+      }
+      break;
+    case "heal":
+      g.pools.push({ x: p.x, y: p.y, r: pw.radius, team: p.team, t: 0, life: pw.time, rate: pw.heal });
+      break;
+    case "flame":
+      p.flameT = pw.time;
+      burst("#ff9a3c", 14, 3);
+      break;
+    case "dash": {
+      // the way you're moving, or the way you're facing if standing still
+      const sp = Math.hypot(p.vx, p.vy);
+      const a = sp > 0.5 ? Math.atan2(p.vy, p.vx) : p.facing;
+      p.kx = Math.cos(a) * 22;
+      p.ky = Math.sin(a) * 22;
+      burst("#ffe14d", 10, 2);
+      break;
+    }
+    case "barrier":
+      p.barrier = pw.amount;
+      p.barrierT = pw.time;
+      break;
+  }
+  return true;
+}
+
+function updatePools(g, dt) {
+  for (let i = g.pools.length - 1; i >= 0; i--) {
+    const pool = g.pools[i];
+    pool.t += dt;
+    for (const p of g.players) {
+      if (!p.alive || p.team !== pool.team || p.hp >= p.maxHp) continue;
+      if (Math.hypot(p.x - pool.x, p.y - pool.y) <= pool.r) p.hp = Math.min(p.maxHp, p.hp + pool.rate * dt);
+    }
+    if (pool.t >= pool.life) g.pools.splice(i, 1);
   }
 }
 

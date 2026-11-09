@@ -141,6 +141,7 @@ export function encodeSnapshot(g, n, extra) {
       r2(p.slowT || 0), r2(p.burnT || 0), Math.round(p.shield || 0), p.maxShield || 0, p.maxHp || 100,
       p.guns.map((gn) => (gn.reserve === null || gn.reserve === undefined ? -1 : gn.reserve)),
       r2(p.tpCd || 0), r2(p.tpCharge || 0), p.tpPad ?? -1,
+      r2(p.powerCd || 0), r2(p.frozenT || 0), r2(p.flameT || 0), Math.round(p.barrier || 0),
     ]),
     b: g.bullets.map((b) => (b.kind === "lob"
       ? [0, GUN_INDEX[b.def.id], b.owner, r2(b.sx), r2(b.sy), r2(b.tx), r2(b.ty), r2(b.t), r2(b.T)]
@@ -151,9 +152,10 @@ export function encodeSnapshot(g, n, extra) {
       pc: (g.pacs || []).map((pc) => [r2(pc.x), r2(pc.y), pc.dx, pc.dy, pc.alive ? 1 : 0, r2(pc.release), r2(pc.chomp), Math.round(pc.hp)]),
       tr: g.train ? [["idle", "warn", "run"].indexOf(g.train.phase), r2(g.train.y), g.train.dir, r2(g.train.t)] : null,
       tp: (g.tpCd || []).map(r2),
+      pl: (g.pools || []).map((q) => [r2(q.x), r2(q.y), q.r, q.team, r2(q.t), q.life]),
     },
     fx: {
-      bo: fresh(g.booms).map((f) => [r2(f.x), r2(f.y), f.R, f.color, r2(f.t)]),
+      bo: fresh(g.booms).map((f) => [r2(f.x), r2(f.y), f.R, f.color, r2(f.t), f.ice ? 1 : 0]),
       be: fresh(g.beams).map((f) => [r2(f.x0), r2(f.y0), r2(f.x1), r2(f.y1), f.color, r2(f.t)]),
       tx: fresh(g.texts).map((f) => [r2(f.x), r2(f.y), f.text, f.color, r2(f.t)]),
     },
@@ -195,6 +197,7 @@ export function applySnapshot(g, s) {
     if (a.length > 22) [p.slowT, p.burnT, p.shield, p.maxShield, p.maxHp] = a.slice(22, 27);
     if (a[27]) a[27].forEach((r, k) => { if (p.guns[k]) p.guns[k].reserve = r < 0 ? null : r; });
     if (a.length > 28) [p.tpCd, p.tpCharge, p.tpPad] = a.slice(28, 31);
+    if (a.length > 31) [p.powerCd, p.frozenT, p.flameT, p.barrier] = a.slice(31, 35);
   });
   g.bullets = s.b.map((a) => {
     const def = GUNS[a[1]];
@@ -212,6 +215,7 @@ export function applySnapshot(g, s) {
       if (pc) [pc.x, pc.y, pc.dx, pc.dy, pc.alive, pc.release, pc.chomp, pc.hp] = [a2[0], a2[1], a2[2], a2[3], !!a2[4], a2[5], a2[6], a2[7]];
     });
     if (s.hz.tp) g.tpCd = s.hz.tp;
+    if (s.hz.pl) g.pools = s.hz.pl.map(([x, y, r, team, t, life]) => ({ x, y, r, team, t, life, rate: 0 }));
     if (s.hz.tr && g.train) [g.train.phase, g.train.y, g.train.dir, g.train.t] = [["idle", "warn", "run"][s.hz.tr[0]], s.hz.tr[1], s.hz.tr[2], s.hz.tr[3]];
   }
   s.mk.forEach((up, i) => {
@@ -236,7 +240,7 @@ export function applySnapshot(g, s) {
       w.walls.push(wall);
     }
   }
-  for (const [x, y, R, color, t] of s.fx.bo) g.booms.push({ x, y, R, color, t, life: 0.45 });
+  for (const [x, y, R, color, t, ice] of s.fx.bo) g.booms.push({ x, y, R, color, t, life: 0.45, ice: !!ice });
   for (const [x0, y0, x1, y1, color, t] of s.fx.be) g.beams.push({ x0, y0, x1, y1, color, t, life: 0.35 });
   for (const [x, y, text, color, t] of s.fx.tx) g.texts.push({ x, y, text, color, t, life: 0.9 });
 }
@@ -387,7 +391,7 @@ export async function createHost(opts) {
         const name = String(m.name || "Player").slice(0, 12);
         const rec = { cid: m.cid, slot, seen: Date.now(), dc: null, pc: null };
         guests.set(m.cid, rec);
-        slots[slot] = { name, cid: m.cid, human: true, loadout: m.loadout, link: "relay" };
+        slots[slot] = { name, cid: m.cid, human: true, loadout: m.loadout, power: m.power, link: "relay" };
         host.lobby();
         offerRtc(rec);
         break;
@@ -572,13 +576,13 @@ export async function joinRoom(opts) {
   client.subscribe(base + "/g/" + cid);
 
   const timer = setInterval(() => {
-    if (!joined) toHost({ t: "join", name: opts.name, loadout: opts.loadout });
+    if (!joined) toHost({ t: "join", name: opts.name, loadout: opts.loadout, power: opts.power });
     guest.send({ t: "ping", ts: performance.now(), rtt });
     if (Date.now() - lastHost > TIMEOUT_MS) {
       opts.onClosed?.(joined ? "Lost connection to the host" : "No room with that PIN (or the host is offline)");
       guest.leave();
     }
   }, 1000);
-  toHost({ t: "join", name: opts.name, loadout: opts.loadout });
+  toHost({ t: "join", name: opts.name, loadout: opts.loadout, power: opts.power });
   return guest;
 }

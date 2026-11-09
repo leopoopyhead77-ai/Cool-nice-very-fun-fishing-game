@@ -107,6 +107,20 @@ The bot picks cards too. It prefers rarer cards, and damage and shield cards.
 
 Being slowed shows as an icy ring and burning shows flames on the player. When you're low on health, the screen edges glow red.
 
+## Powers (active, with cooldowns)
+
+Everyone brings **one power** into a match. Pick it on the item-pick screen (local) or the loadout screen (online). Tap the **POWER** button above your move stick (Space on a keyboard) to use it; it then goes on cooldown, shown as a dark sweep and a seconds countdown. Powers start each round partly charged.
+
+| Power | Effect | Cooldown |
+|---|---|---|
+| ❄️ **Freeze Blast** | Enemies within 3 tiles (with a clear line) are frozen solid for 1.6 s: no moving or shooting | 18 s |
+| ➕ **Heal Pool** | A pool at your feet heals **you and your teammates** 14 HP/s for 4 s (not enemies) | 20 s |
+| 🔥 **Flaming Bullets** | For 5 s, your hits set targets on fire (6 HP/s for 2 s) | 16 s |
+| ⇨ **Dash** | A burst of about 3 tiles the way you're moving | 7 s |
+| ⬡ **Barrier** | A bubble that soaks the next 45 damage, for up to 5 s | 16 s |
+
+Bots use their powers too: freeze when close, heal when hurt, flaming bullets when shooting, and barrier or dash when under fire.
+
 ## Maps
 
 Pick on the main menu (both apps; the host picks online): **Arena**, **Pac-Maze**, **Desert Rail**, or **Random**.

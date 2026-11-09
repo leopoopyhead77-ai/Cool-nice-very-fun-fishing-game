@@ -15,7 +15,8 @@ import { createHost, joinRoom, normalizeCode, encodeWalls, MODES, PIN_LENGTH, te
 const APP = typeof __APP__ !== "undefined" ? __APP__ : "local";
 const IS_ONLINE_APP = APP === "online";
 import { createRemoteController, createHostSync, createGuestView } from "./online.js";
-import { gunIconURL } from "./art.js";
+import { gunIconURL, powerIconURL } from "./art.js";
+import { POWERS, POWER_BY_ID, POWER_IDS } from "./powers.js";
 import { MAPS, MAP_IDS } from "./maps.js";
 
 const ME = 0;
@@ -40,7 +41,19 @@ const settings = {
   // "classic": the original — BUILD switches the aim stick into a build stick
   buildStyle: load("buildStyle", "stick"),
   map: load("map", "arena"),
+  power: load("power", "dash"),
+  power2: load("power2", "barrier"),
 };
+if (!POWER_BY_ID[settings.power]) settings.power = "dash";
+if (!POWER_BY_ID[settings.power2]) settings.power2 = "barrier";
+const botPower = () => POWER_IDS[Math.floor(Math.random() * POWER_IDS.length)];
+// power picker row (pick screen / loadout screen)
+const powerRow = (pl, chosen) => `<div class="pw-row">
+  <span class="pw-lbl">POWER</span>
+  ${POWERS.map((pw) => `<button class="pw${pw.id === chosen ? " on" : ""}" data-p="${pl}" data-pw="${pw.id}" style="--c:${pw.color}" title="${pw.desc}">
+    <img src="${powerIconURL(pw.id)}" alt="" draggable="false" /><b>${pw.name}</b><small>${pw.cd}s</small>
+  </button>`).join("")}
+</div>`;
 if (settings.map !== "random" && !MAPS[settings.map]) settings.map = "arena";
 // "random" picks a map each match
 const pickMap = () => (settings.map === "random" ? MAP_IDS[Math.floor(Math.random() * MAP_IDS.length)] : settings.map);
@@ -112,6 +125,7 @@ app.innerHTML = `
       </div>
       <span class="lo-hint">Pick a slot, then a gun</span>
     </div>
+    <div id="loPower"></div>
     <div class="gun-grid" id="gunGrid"></div>
   </section>
 
@@ -267,6 +281,7 @@ const sel = { mode: "bot", picks: [[], []], ready: [false, false], focus: [null,
 function openSelect(mode) {
   sel.mode = mode;
   sel.picks = [settings.loadout.slice(), settings.loadout2.slice()];
+  sel.power = [settings.power, settings.power2];
   sel.ready = [false, mode !== "pvp"]; // vs bot: only player 1 picks
   sel.focus = [sel.picks[0][0], sel.picks[1][0]];
   setOrientation(mode === "pvp" ? "portrait" : "landscape");
@@ -302,14 +317,25 @@ function renderSelect() {
           </button>`;
         }).join("")}
       </div>
+      ${powerRow(pl, sel.power[pl])}
       <div class="sel-foot">
-        <p class="sel-desc">${f ? `<b style="color:${TIER_COLOR[f.tier]}">${f.tier} ${f.name}</b> — ${f.desc}` : ""}</p>
+        <p class="sel-desc">${sel.powerFocus === pl ? `<b style="color:${POWER_BY_ID[sel.power[pl]].color}">${POWER_BY_ID[sel.power[pl]].name}</b> (${POWER_BY_ID[sel.power[pl]].cd}s cooldown) — ${POWER_BY_ID[sel.power[pl]].desc}` : f ? `<b style="color:${TIER_COLOR[f.tier]}">${f.tier} ${f.name}</b> — ${f.desc}` : ""}</p>
         <button class="btn ${ready ? "" : "primary"} sel-ready" data-p="${pl}" ${picks.length === 2 ? "" : "disabled"}>${ready ? "Change" : sel.mode === "pvp" ? "READY" : "FIGHT ▶"}</button>
       </div>`;
   }
 }
 
 $("selWrap").addEventListener("click", (e) => {
+  const pwBtn = e.target.closest(".pw");
+  if (pwBtn) {
+    const pl = Number(pwBtn.dataset.p);
+    sel.power[pl] = pwBtn.dataset.pw;
+    sel.powerFocus = pl;
+    sel.ready[pl] = false;
+    click();
+    renderSelect();
+    return;
+  }
   const item = e.target.closest(".item");
   const readyBtn = e.target.closest(".sel-ready");
   if (item) {
@@ -323,6 +349,7 @@ $("selWrap").addEventListener("click", (e) => {
       picks.push(id);
     }
     sel.focus[pl] = id;
+    sel.powerFocus = -1;
     sel.ready[pl] = false;
     click();
     renderSelect();
@@ -335,9 +362,13 @@ $("selWrap").addEventListener("click", (e) => {
     if (sel.ready.every(Boolean)) {
       settings.loadout = sel.picks[0].slice();
       save("loadout", settings.loadout);
+      settings.power = sel.power[0];
+      save("power", settings.power);
       if (sel.mode === "pvp") {
         settings.loadout2 = sel.picks[1].slice();
         save("loadout2", settings.loadout2);
+        settings.power2 = sel.power[1];
+        save("power2", settings.power2);
       }
       startMatch(sel.mode);
       return;
@@ -381,6 +412,7 @@ let editSlot = 0;
 let editPlayer = 0;
 const editList = () => (editPlayer === 1 ? settings.loadout2 : settings.loadout);
 function renderLoadout() {
+  $("loPower").innerHTML = IS_ONLINE_APP ? powerRow(0, settings.power) : "";
   $("loPlayer").querySelectorAll("button").forEach((b) => b.classList.toggle("on", Number(b.dataset.p) === editPlayer));
   document.querySelectorAll(".lo-slot").forEach((b) => {
     const i = Number(b.dataset.slot);
@@ -425,6 +457,14 @@ $("loPlayer").addEventListener("click", (e) => {
   if (!b) return;
   editPlayer = Number(b.dataset.p);
   editSlot = 0;
+  click();
+  renderLoadout();
+});
+$("loPower").addEventListener("click", (e) => {
+  const b = e.target.closest(".pw");
+  if (!b) return;
+  settings.power = b.dataset.pw;
+  save("power", settings.power);
   click();
   renderLoadout();
 });
@@ -558,6 +598,7 @@ const input = createInput(canvas, {
   onPause: pause,
   onFirstTouch: unlockAudio,
   cardPhase: () => !!game && game.state === "cards" && !online(),
+  hasPower: (i) => !!padPlayer(i)?.power,
   buildStyle: () => settings.buildStyle,
 });
 
@@ -592,6 +633,7 @@ function startMatch(mode = matchMode) {
   resize();
   game = createGame({
     loadouts: [settings.loadout.slice(), mode === "pvp" ? settings.loadout2.slice() : botLoadout()],
+    powers: [settings.power, mode === "pvp" ? settings.power2 : botPower()],
     names: names(),
     controllers: mode === "pvp"
       ? [input.controllers[0], input.controllers[1]]
@@ -776,6 +818,7 @@ $("netCreate").addEventListener("click", async () => {
       mode: settings.netMode,
       name,
       loadout: settings.loadout.slice(),
+      power: settings.power,
       onStatus: (t) => setNetStatus(t),
       onLobby: () => renderLobby(),
       onGuestMessage: (slot, m) => {
@@ -814,6 +857,7 @@ $("netJoin").addEventListener("click", async () => {
     guest = await joinRoom({
       code, name,
       loadout: settings.loadout.slice(),
+      power: settings.power,
       onStatus: (t) => setNetStatus(t),
       onLobby: (m, me) => {
         lobbyInfo = m;
@@ -894,6 +938,7 @@ function startOnlineMatch() {
   const loadouts = slots.map((s, i) => (i === 0 ? settings.loadout.slice() : s && valid(s.loadout) ? s.loadout : botLoadout()));
   const nm = slots.map((s, i) => (s ? s.name : `BOT ${i + 1}`));
   const teams = host.teams.slice();
+  const powers = slots.map((s, i) => (i === 0 ? settings.power : s && POWER_BY_ID[s.power] ? s.power : botPower()));
   hostRemotes = slots.map((s, i) => (i > 0 && s && !s.left ? createRemoteController() : null));
   const controllers = slots.map((s, i) => (i === 0 ? input.controllers[0] : hostRemotes[i] || createBot(settings.difficulty)));
   const mid = Math.random().toString(36).slice(2, 10);
@@ -905,10 +950,10 @@ function startOnlineMatch() {
   input.setPvp(false);
   resize();
   const map = pickMap();
-  game = createGame({ loadouts, names: nm, controllers, seed, teams, map });
+  game = createGame({ loadouts, names: nm, controllers, seed, teams, map, powers });
   host.started = true;
   hostSync = createHostSync(host, game, mid, hostRemotes);
-  const msg = { t: "start", mid, seed, loadouts, names: nm, teams, map, slots: slots.map((s) => (s ? s.cid : null)) };
+  const msg = { t: "start", mid, seed, loadouts, names: nm, teams, map, powers, slots: slots.map((s) => (s ? s.cid : null)) };
   host.broadcast(msg);
   // the start message is important: repeat it in case a guest misses one
   [600, 1300, 2200].forEach((ms) => setTimeout(() => host && host.started && hostSync && host.broadcast(msg), ms));

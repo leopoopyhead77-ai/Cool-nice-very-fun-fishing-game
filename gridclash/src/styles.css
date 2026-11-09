@@ -264,3 +264,19 @@ body.is-online .online-only { display: block; }
 
 #mapPick button { font-size: 12px; padding: 8px 4px; text-transform: none; }
 .map-note { margin: -4px 0 0 76px; font-size: 11px; }
+
+/* ---- power picker ---- */
+.pw-row { display: flex; align-items: stretch; gap: 5px; }
+.pw-lbl { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 9px; font-weight: 900; letter-spacing: 0.15em; color: var(--muted); text-align: center; }
+.pw {
+  flex: 1; min-width: 0; font: inherit; color: var(--text); cursor: pointer;
+  background: var(--card); border: 1.5px solid var(--line); border-radius: 10px;
+  padding: 4px 2px; display: flex; flex-direction: column; align-items: center; gap: 1px;
+}
+.pw img { width: 26px; height: 26px; pointer-events: none; }
+.pw b { font-size: 9.5px; line-height: 1.05; text-align: center; }
+.pw small { font-size: 8.5px; color: var(--muted); font-weight: 800; }
+.pw.on { border-color: var(--c); background: rgba(40, 56, 88, 0.95); box-shadow: 0 0 0 2px var(--c) inset; }
+.sel-wrap.two .pw img { width: 20px; height: 20px; }
+.sel-wrap.two .pw b { font-size: 8px; }
+#loPower .pw-row { margin-bottom: 4px; }

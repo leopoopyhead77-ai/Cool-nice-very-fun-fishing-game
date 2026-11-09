@@ -76,6 +76,7 @@ export function layout(W, H, pvp = false) {
       },
     };
     addQuickButtons(pad, u);
+    addPowerButton(pad, u, R, 40 * u);
     return {
       u, R, top, pvp: false,
       arena: fitArena(W, H, top, 4, 4),
@@ -123,6 +124,8 @@ export function layout(W, H, pvp = false) {
   };
   addQuickButtons(blue, u);
   addQuickButtons(red, u);
+  addPowerButton(blue, u, R, 34 * u);
+  addPowerButton(red, u, R, 34 * u);
   return {
     u, R, top: 18 * u, pvp: true,
     arena,
@@ -156,7 +159,7 @@ function portraitPvp(W, H) {
     build: { x: W - R - 16 * u, y: H - edge - R - 30 * u, r: 24 * u }, // above the aim stick
     slot0: slotRect(W / 2, H - 58 * u, lw, lh, 0),
     slot1: slotRect(W / 2, H - 24 * u, lw, lh, 0),
-    info: { x: 74 * u, y: H - band + 14 * u }, // score pill, clear of BUILD / EDIT / ↺
+    info: { x: W / 2, y: H - 92 * u }, // score pill: above the weapon slots, clear of every button
     zones: {
       move: { x0: 0, y0: H / 2, x1: W / 2, y1: H },
       aim: { x0: W / 2, y0: H / 2, x1: W, y1: H },
@@ -170,7 +173,7 @@ function portraitPvp(W, H) {
     build: flip(blue.build),
     slot0: slotRect(W / 2, 58 * u, lw, lh, Math.PI),
     slot1: slotRect(W / 2, 24 * u, lw, lh, Math.PI),
-    info: { x: W - 74 * u, y: band - 14 * u },
+    info: { x: W / 2, y: 92 * u },
     zones: {
       move: { x0: W / 2, y0: 0, x1: W, y1: H / 2 },
       aim: { x0: 0, y0: 0, x1: W / 2, y1: H / 2 },
@@ -178,6 +181,8 @@ function portraitPvp(W, H) {
   };
   addQuickButtons(blue, u);
   addQuickButtons(red, u);
+  addPowerButton(blue, u, R, 34 * u);
+  addPowerButton(red, u, R, 34 * u);
   return {
     u, R, top: 0, pvp: true, portrait: true,
     // screen directions are turned 90° from board directions in this layout
@@ -197,6 +202,14 @@ function addQuickButtons(pad, u) {
   const gap = pad.build.r + 8 * u;
   pad.edit = { ...at(-(gap + 22 * u), 4 * u), r: 21 * u };
   pad.reset = { ...at(-(gap + 22 * u + 50 * u), 4 * u), r: 17 * u };
+}
+
+// The POWER button sits just above the move stick, in the pad's own frame.
+function addPowerButton(pad, u, R, gap) {
+  const c = Math.cos(pad.rot);
+  const n = Math.sin(pad.rot);
+  const ly = -(R + gap);
+  pad.power = { x: pad.move.x - ly * n, y: pad.move.y + ly * c, r: 25 * u };
 }
 
 // Where the 3 buff cards sit for a pad, in screen space (and in the pad's own
@@ -252,6 +265,7 @@ export function createInput(canvas, hooks) {
     for (const pad of L.pads) {
       const mode = hooks.mode(pad.team);
       const classic = hooks.buildStyle?.() === "classic";
+      if (pad.power && hooks.hasPower?.(pad.team) && inCircle(pad.power, x, y, 4)) return { team: pad.team, btn: "power" };
       if (inCircle(pad.build, x, y)) return { team: pad.team, btn: "build" };
       if (!classic && inCircle(pad.edit, x, y, 4)) return { team: pad.team, btn: "qedit" };
       if (!classic && inCircle(pad.reset, x, y, 4)) return { team: pad.team, btn: "reset" };
@@ -275,6 +289,9 @@ export function createInput(canvas, hooks) {
         break;
       case "qedit":
         out.push({ t: "qedit", tap: true });
+        break;
+      case "power":
+        out.push({ t: "power" });
         break;
       case "edit":
         out.push({ t: "mode", mode: mode === "edit" ? "build" : "edit" });
@@ -495,6 +512,7 @@ export function createInput(canvas, hooks) {
       case "KeyB": out.push({ t: "qbuild", tap: true }); break;
       case "KeyE": out.push({ t: "qedit", tap: true }); break;
       case "KeyF": press(0, "reset"); break;
+      case "Space": out.push({ t: "power" }); ev.preventDefault?.(); break;
       case "KeyR": out.push({ t: "reload" }); break;
       case "Digit1": out.push({ t: "slot", slot: 0 }); break;
       case "Digit2": out.push({ t: "slot", slot: 1 }); break;

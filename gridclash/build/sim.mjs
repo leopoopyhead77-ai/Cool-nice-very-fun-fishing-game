@@ -134,6 +134,7 @@ for (const n of [3, 4]) {
     const g = createGame({
       loadouts: [[ids[k % 12], ids[(k + 4) % 12]], [ids[(k + 7) % 12], ids[(k + 2) % 12]]],
       names: ["A", "B"], controllers: [createBot("normal"), createBot("normal")], seed: 300 + k, cards: true,
+      powers: [["freeze", "heal", "flame", "dash", "barrier"][k % 5], ["barrier", "dash", "freeze", "heal", "flame"][k % 5]],
     });
     if (g.state !== "cards" || g.offers.length !== 2 || g.offers[0].length !== 3) throw new Error("no card phase at match start");
     let t = 0;

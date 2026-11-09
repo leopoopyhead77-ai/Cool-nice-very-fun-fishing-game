@@ -90,6 +90,13 @@ export function playEvents(events, me, myTeam = me) {
         break;
       case "tileHit": noise(0.04, 1200, 2, 0.08, "bandpass"); break;
       case "bounce": tone(1800, 2400, 0.04, 0.05, "triangle"); break;
+      case "power":
+        if (e.power === "freeze") { tone(1800, 600, 0.35, 0.12, "sine"); noise(0.3, 5000, 2, 0.15, "bandpass"); }
+        else if (e.power === "heal") tone(500, 1100, 0.4, 0.1, "sine");
+        else if (e.power === "flame") noise(0.4, 900, 0.6, 0.2);
+        else if (e.power === "dash") noise(0.15, 2500, 1, 0.15);
+        else tone(300, 700, 0.25, 0.1, "triangle");
+        break;
       case "teleport": tone(400, 1600, 0.18, 0.08, "sine"); break;
       case "chomp": tone(300, 200, 0.08, 0.14, "square"); tone(260, 160, 0.08, 0.12, "square"); if (mine) vibrate(40); break;
       case "pacDown": tone(900, 120, 0.4, 0.12, "square"); break;

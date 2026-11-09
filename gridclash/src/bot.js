@@ -179,6 +179,17 @@ export function createBot(difficulty = "normal") {
         }
       }
 
+      // --- active power
+      if (p.power && p.powerCd <= 0 && !(p.frozenT > 0)) {
+        let use = false;
+        if (p.power === "freeze") use = dist < 2.8 && losClear;
+        else if (p.power === "heal") use = p.hp < p.maxHp * 0.5;
+        else if (p.power === "flame") use = canHit && dist < def.range * 0.8;
+        else if (p.power === "barrier") use = tookHit && p.hp < p.maxHp * 0.8;
+        else if (p.power === "dash") use = (tookHit && p.hp < p.maxHp * 0.55) || (def.pref < 3 && losClear && dist > 4 && dist < 8);
+        if (use && rand() < D.fire) cmd.actions.push({ t: "power" });
+      }
+
       // --- peek: open a window in our own wall that blocks the shot
       if (s.peek) {
         s.peek.t -= dt;

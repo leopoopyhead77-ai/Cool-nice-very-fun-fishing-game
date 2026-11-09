@@ -2,7 +2,8 @@
 
 import { GW, GH, WALL_COST, isRock } from "./world.js";
 import { gunOf, enemyOf, traceShot, buildPreview, editPreview, quickEditTarget, nearestEditedWall, MAX_HP, MAX_MATS, magOf } from "./game.js";
-import { drawGun, drawCardIcon, GUN_LEN } from "./art.js";
+import { drawGun, drawCardIcon, drawPowerIcon, GUN_LEN } from "./art.js";
+import { POWER_BY_ID } from "./powers.js";
 import { CARD_BY_ID, RARITIES } from "./cards.js";
 import { cardRects } from "./input.js";
 import { PAC_R, TRAIN_LEN } from "./hazards.js";
@@ -415,6 +416,38 @@ export function createRenderer(canvas) {
 
   // ---- map gimmicks -------------------------------------------------------------
 
+  function drawPools(g) {
+    const TS = v.TS;
+    for (const pool of g.pools || []) {
+      const k = pool.t / pool.life;
+      const x = sx(pool.x);
+      const y = sy(pool.y);
+      const R = pool.r * TS;
+      const a = Math.min(1, (1 - k) * 3);
+      const grad = ctx.createRadialGradient(x, y, 0, x, y, R);
+      grad.addColorStop(0, `rgba(90,255,150,${0.38 * a})`);
+      grad.addColorStop(1, `rgba(90,255,150,${0.1 * a})`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(x, y, R, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = `rgba(150,255,190,${0.8 * a})`;
+      ctx.lineWidth = Math.max(1.5, TS * 0.07);
+      ctx.setLineDash([TS * 0.25, TS * 0.15]);
+      ctx.beginPath();
+      ctx.arc(x, y, R, g.time, g.time + Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      for (let i = 0; i < 4; i++) {
+        const t = (g.time * 0.8 + i / 4) % 1;
+        const ang = i * 1.7 + pool.x;
+        ctx.globalAlpha = a * (1 - t);
+        label("+", x + Math.cos(ang) * R * 0.5, y + Math.sin(ang) * R * 0.5 - t * TS * 0.8, TS * 0.5, "#9dffc0", "center", 900);
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
   function drawTeleporters(g) {
     const TS = v.TS;
     const tps = (g.map && g.map.teleporters) || [];
@@ -682,6 +715,23 @@ export function createRenderer(canvas) {
     ctx.beginPath();
     ctx.arc(x + Math.cos(a) * r * 0.45, y + Math.sin(a) * r * 0.45, r * 0.2, 0, Math.PI * 2);
     ctx.fill();
+    // powers
+    if (p.flameT > 0) {
+      ctx.strokeStyle = `rgba(255,140,40,${0.55 + 0.35 * Math.sin(g.time * 18)})`;
+      ctx.lineWidth = Math.max(2, TS * 0.09);
+      ctx.beginPath();
+      ctx.arc(x, y, r + TS * 0.14, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    if (p.barrier > 0) {
+      ctx.fillStyle = "rgba(79,176,255,0.18)";
+      ctx.strokeStyle = "rgba(160,215,255,0.85)";
+      ctx.lineWidth = Math.max(1.5, TS * 0.06);
+      ctx.beginPath();
+      ctx.arc(x, y, r + TS * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
     // status effects
     if (p.slowT > 0) {
       ctx.fillStyle = "rgba(160,230,255,0.45)";
@@ -706,6 +756,24 @@ export function createRenderer(canvas) {
         ctx.arc(fx, fy, TS * (0.09 + 0.04 * Math.sin(a2 * 2)), 0, Math.PI * 2);
         ctx.fill();
       }
+    }
+    if (p.frozenT > 0) {
+      // frozen solid: an ice block around them
+      const s2 = r * 1.5;
+      ctx.fillStyle = "rgba(170,230,255,0.55)";
+      ctx.strokeStyle = "rgba(230,250,255,0.95)";
+      ctx.lineWidth = Math.max(1.5, TS * 0.06);
+      ctx.beginPath();
+      ctx.rect(x - s2, y - s2, s2 * 2, s2 * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(255,255,255,0.7)";
+      ctx.beginPath();
+      ctx.moveTo(x - s2 * 0.6, y - s2 * 0.8);
+      ctx.lineTo(x - s2 * 0.1, y - s2 * 0.3);
+      ctx.moveTo(x + s2 * 0.2, y - s2 * 0.85);
+      ctx.lineTo(x + s2 * 0.5, y - s2 * 0.55);
+      ctx.stroke();
     }
     if (p.hitFlash > 0) {
       ctx.fillStyle = `rgba(255,255,255,${p.hitFlash * 0.7})`;
@@ -890,11 +958,11 @@ export function createRenderer(canvas) {
     for (const b of g.booms) {
       const k = b.t / b.life;
       const r = b.R * TS * (0.4 + k * 0.7);
-      ctx.fillStyle = `rgba(255,${Math.round(210 - k * 120)},90,${(1 - k) * 0.55})`;
+      ctx.fillStyle = b.ice ? `rgba(160,230,255,${(1 - k) * 0.45})` : `rgba(255,${Math.round(210 - k * 120)},90,${(1 - k) * 0.55})`;
       ctx.beginPath();
       ctx.arc(sx(b.x), sy(b.y), r, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = `rgba(255,240,200,${1 - k})`;
+      ctx.strokeStyle = b.ice ? `rgba(230,250,255,${1 - k})` : `rgba(255,240,200,${1 - k})`;
       ctx.lineWidth = TS * 0.12 * (1 - k) + 1;
       ctx.beginPath();
       ctx.arc(sx(b.x), sy(b.y), b.R * TS * (0.3 + k), 0, Math.PI * 2);
@@ -1585,7 +1653,48 @@ export function createRenderer(canvas) {
     ctx.fillRect(x - bw / 2, y + gap / 2, bw, bh);
   }
 
+  // POWER: icon + a cooldown sweep and seconds; glows when ready
+  function drawPowerButton(g, p, pad) {
+    const pw = POWER_BY_ID[p.power];
+    if (!pw || !pad.power) return;
+    const u = v.L.u;
+    const P = pad.power;
+    const ready = p.powerCd <= 0 && p.alive;
+    inFrame(pad, P.x, P.y, () => {
+      if (ready) {
+        ctx.fillStyle = pw.color;
+        ctx.globalAlpha = 0.25 + 0.15 * Math.sin(g.time * 5);
+        ctx.beginPath();
+        ctx.arc(0, 0, P.r + 7 * u, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      ctx.fillStyle = "rgba(8,12,20,0.82)";
+      ctx.beginPath();
+      ctx.arc(0, 0, P.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = ready ? pw.color : "rgba(255,255,255,0.25)";
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.globalAlpha = ready ? 1 : 0.45;
+      drawPowerIcon(ctx, pw.id, P.r * 1.15);
+      ctx.globalAlpha = 1;
+      if (!ready && p.powerCd > 0) {
+        const k = p.powerCd / pw.cd;
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.arc(0, 0, P.r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k);
+        ctx.closePath();
+        ctx.fill();
+        label(String(Math.ceil(p.powerCd)), 0, 1, P.r * 0.75, "#ffffff", "center", 900);
+      }
+      label(pw.name.toUpperCase(), 0, -P.r - 8 * u, 7 * u, ready ? pw.color : "rgba(255,255,255,0.4)", "center", 900);
+    });
+  }
+
   function drawButtons(g, p, pad, input) {
+    drawPowerButton(g, p, pad);
     if (v.buildStyle === "classic") {
       drawButtonsClassic(g, p, pad);
       return;
@@ -1842,6 +1951,7 @@ export function createRenderer(canvas) {
     }
     ctx.drawImage(v.floor, v.ox, v.oy, GW * v.TS, GH * v.TS);
     drawMedkits(g);
+    drawPools(g);
     drawTeleporters(g);
     drawTrackWarning(g);
     drawWalls(g);
