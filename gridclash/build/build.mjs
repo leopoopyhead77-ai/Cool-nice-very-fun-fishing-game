@@ -61,7 +61,7 @@ for (const [app, cfg] of Object.entries(APPS)) {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
-<meta name="theme-color" content="#273463" />
+<meta name="theme-color" content="#2a3142" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="screen-orientation" content="landscape" />
 <title>${cfg.title}</title>
@@ -99,8 +99,8 @@ for (const [app, cfg] of Object.entries(APPS)) {
     scope: "./",
     display: "fullscreen",
     orientation: cfg.orientation,
-    background_color: "#273463",
-    theme_color: "#273463",
+    background_color: "#2a3142",
+    theme_color: "#2a3142",
     icons: [
       { src: "icon-192.png", sizes: "192x192", type: "image/png" },
       { src: "icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },
@@ -142,13 +142,13 @@ writeFileSync(resolve(docs, "index.html"), `<!doctype html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta name="theme-color" content="#273463" />
+<meta name="theme-color" content="#2a3142" />
 <title>Grid Clash</title>
 <meta name="description" content="Shoot-and-build arena for phones. Play in the browser on iPhone or Android, or install the Android apps." />
 <link rel="icon" type="image/png" href="play/icon-192.png" />
 <link rel="apple-touch-icon" href="play/icon-180.png" />
 <style>
-  :root { --bg: #273463; --card: #2f3d78; --line: rgba(255,255,255,.1); --text: #eef3ff; --muted: #9aa7c2; --blue: #3fa7ff; --red: #ff4d5e; --green: #43d97b; --gold: #ffd23f; }
+  :root { --bg: #2a3142; --card: #323a50; --line: rgba(255,255,255,.1); --text: #eef3ff; --muted: #9aa7c2; --blue: #3fa7ff; --red: #ff4d5e; --green: #43d97b; --gold: #ffd23f; }
   * { box-sizing: border-box; }
   body { margin: 0; min-height: 100vh; background: radial-gradient(ellipse at top, #16243d, var(--bg) 60%); color: var(--text);
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; padding: max(20px, env(safe-area-inset-top)) 16px 32px; }

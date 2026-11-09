@@ -69,7 +69,7 @@ export function createRenderer(canvas) {
     c.height = Math.ceil(GH * TS);
     const f = c.getContext("2d");
     const hash = (x, y) => ((x * 73856093) ^ (y * 19349663)) >>> 0;
-    const base = theme === "pac" ? ["#121c52", "#152059"] : theme === "desert" ? ["#d6b072", "#dbb77b"] : ["#4f8f4a", "#559650"];
+    const base = theme === "pac" ? ["#141a3c", "#161d42"] : theme === "desert" ? ["#c4a676", "#c9ab7c"] : ["#4b6b4c", "#4f7050"];
     f.fillStyle = base[0];
     f.fillRect(0, 0, c.width, c.height);
     for (let y = 0; y < GH; y++) {
@@ -85,7 +85,7 @@ export function createRenderer(canvas) {
       for (let y = 0; y < GH; y++) {
         for (let x = 0; x < GW; x++) {
           const h = hash(x, y);
-          f.fillStyle = h % 2 ? "rgba(255,245,215,0.25)" : "rgba(150,100,40,0.18)";
+          f.fillStyle = h % 2 ? "rgba(255,245,215,0.16)" : "rgba(150,100,40,0.18)";
           f.fillRect((x + (h % 7) / 8) * TS, (y + ((h >> 3) % 7) / 8) * TS, TS * 0.08, TS * 0.08);
           if (h % 11 === 0) {
             f.strokeStyle = "rgba(160,110,50,0.22)";
@@ -115,7 +115,7 @@ export function createRenderer(canvas) {
         for (let x = 0; x < GW; x++) {
           const h = hash(x, y);
           if (h % 3 === 0) {
-            f.strokeStyle = "rgba(160,215,120,0.45)";
+            f.strokeStyle = "rgba(150,185,135,0.3)";
             f.lineWidth = Math.max(1, TS * 0.04);
             const gx = (x + (h % 9) / 10) * TS;
             const gy = (y + ((h >> 4) % 9) / 10) * TS;
@@ -125,8 +125,8 @@ export function createRenderer(canvas) {
             f.moveTo(gx, gy);
             f.lineTo(gx + TS * 0.05, gy - TS * 0.16);
             f.stroke();
-          } else if (h % 17 === 1) {
-            f.fillStyle = h % 2 ? "#ffe066" : "#ff9ad5";
+          } else if (h % 41 === 1) {
+            f.fillStyle = h % 2 ? "rgba(230,220,160,0.55)" : "rgba(220,190,210,0.5)";
             f.beginPath();
             f.arc((x + 0.5) * TS, (y + 0.5) * TS, TS * 0.06, 0, Math.PI * 2);
             f.fill();
@@ -263,7 +263,7 @@ export function createRenderer(canvas) {
       f.fillRect(14 * TS, 9.42 * TS, 2 * TS, 0.16 * TS);
     }
     // border
-    f.strokeStyle = theme === "pac" ? "#3d5bff" : theme === "desert" ? "#9a5530" : "#2f6b2c";
+    f.strokeStyle = theme === "pac" ? "#3d5bff" : theme === "desert" ? "#9a5530" : "#34503a";
     f.lineWidth = TS * 0.12;
     f.strokeRect(0, 0, c.width, c.height);
     v.floor = c;
@@ -1215,7 +1215,7 @@ export function createRenderer(canvas) {
 
   function hpBar(x, y, w, h, p, align) {
     const k = Math.max(0, p.hp / (p.maxHp || MAX_HP));
-    ctx.fillStyle = "rgba(30,40,86,0.7)";
+    ctx.fillStyle = "rgba(36,43,64,0.7)";
     rr(ctx, x, y, w, h, h / 2);
     ctx.fill();
     const fw = Math.max(h, (w - 4) * k);
@@ -1243,7 +1243,7 @@ export function createRenderer(canvas) {
 
   function drawPause() {
     const P = v.L.pause;
-    ctx.fillStyle = "rgba(30,40,86,0.7)";
+    ctx.fillStyle = "rgba(36,43,64,0.7)";
     ctx.beginPath();
     ctx.arc(P.x, P.y, P.r, 0, Math.PI * 2);
     ctx.fill();
@@ -1279,7 +1279,7 @@ export function createRenderer(canvas) {
     } else if (g.state === "roundEnd") {
       const won = g.roundWinner === me;
       const txt = g.roundWinner < 0 ? "DRAW" : won ? "ROUND WON" : "ROUND LOST";
-      ctx.fillStyle = "rgba(30,40,86,0.55)";
+      ctx.fillStyle = "rgba(36,43,64,0.55)";
       ctx.fillRect(-bandLen / 2, -34 * u, bandLen, 68 * u);
       label(txt, 0, 0, 34 * u, g.roundWinner < 0 ? "#fff" : won ? "#6dff9a" : "#ff6b6b", "center", 900);
     }
@@ -1303,7 +1303,7 @@ export function createRenderer(canvas) {
         const n = g.numTeams;
         const chip = 30 * u;
         const tw = 74 * u + n * (chip + 4 * u);
-        ctx.fillStyle = "rgba(30,40,86,0.72)";
+        ctx.fillStyle = "rgba(36,43,64,0.72)";
         rr(ctx, cx - tw / 2, 4 * u, tw, 32 * u, 16 * u);
         ctx.fill();
         label(timerText(g), cx - tw / 2 + 36 * u, ty - 4 * u, 13 * u, g.timeLeft <= 10 ? "#ff7a7a" : "#fff");
@@ -1322,7 +1322,7 @@ export function createRenderer(canvas) {
         }
       }
       if (!ffa) {
-      ctx.fillStyle = "rgba(30,40,86,0.72)";
+      ctx.fillStyle = "rgba(36,43,64,0.72)";
       rr(ctx, cx - 120 * u, 4 * u, 240 * u, 32 * u, 16 * u);
       ctx.fill();
       ctx.fillStyle = TEAM[0].main;
@@ -1369,7 +1369,7 @@ export function createRenderer(canvas) {
       for (const pad of L.pads) {
         inFrame(pad, pad.info.x, pad.info.y, () => {
           const mine = pad.team;
-          ctx.fillStyle = "rgba(30,40,86,0.78)";
+          ctx.fillStyle = "rgba(36,43,64,0.78)";
           rr(ctx, -66 * u, -9 * u, 132 * u, 18 * u, 9 * u);
           ctx.fill();
           ctx.fillStyle = TEAM[mine].main;
@@ -1399,7 +1399,7 @@ export function createRenderer(canvas) {
       });
     } else {
       // shared screen: a compact score pill both players can read
-      ctx.fillStyle = "rgba(30,40,86,0.78)";
+      ctx.fillStyle = "rgba(36,43,64,0.78)";
       rr(ctx, cx - 70 * u, 1 * u, 140 * u, 16 * u, 8 * u);
       ctx.fill();
       ctx.fillStyle = TEAM[0].main;
@@ -1486,8 +1486,8 @@ export function createRenderer(canvas) {
     }
     const grad = ctx.createLinearGradient(0, -h / 2, 0, h / 2);
     grad.addColorStop(0, shade(R.color, 0.42));
-    grad.addColorStop(0.55, "#2a3770");
-    grad.addColorStop(1, "#1f2a5c");
+    grad.addColorStop(0.55, "#2a3248");
+    grad.addColorStop(1, "#202638");
     ctx.fillStyle = grad;
     rr(ctx, -w / 2, -h / 2, w, h, 12 * u);
     ctx.fill();
@@ -1526,7 +1526,7 @@ export function createRenderer(canvas) {
   function drawCardPhase(g, meta) {
     const L = v.L;
     const u = L.u;
-    ctx.fillStyle = "rgba(24,30,78,0.8)";
+    ctx.fillStyle = "rgba(24,28,42,0.8)";
     ctx.fillRect(0, 0, v.W, v.H);
     for (const pad of L.pads) {
       const pid = L.pvp ? pad.team : meta.local ?? 0;
@@ -1694,7 +1694,7 @@ export function createRenderer(canvas) {
         ctx.fill();
         ctx.globalAlpha = 1;
       }
-      ctx.fillStyle = "rgba(30,40,86,0.82)";
+      ctx.fillStyle = "rgba(36,43,64,0.82)";
       ctx.beginPath();
       ctx.arc(0, 0, P.r, 0, Math.PI * 2);
       ctx.fill();
@@ -1765,7 +1765,7 @@ export function createRenderer(canvas) {
     ctx.fill();
     ctx.stroke();
     inFrame(pad, B.x, B.y, () => {
-      ctx.fillStyle = building ? "#5aff96" : "rgba(30,40,86,0.78)";
+      ctx.fillStyle = building ? "#5aff96" : "rgba(36,43,64,0.78)";
       ctx.beginPath();
       ctx.arc(0, 0, B.r, 0, Math.PI * 2);
       ctx.fill();
@@ -1786,7 +1786,7 @@ export function createRenderer(canvas) {
     const E = pad.edit;
     const editing = drag && drag.kind === "qedit";
     inFrame(pad, E.x, E.y, () => {
-      ctx.fillStyle = editing ? "#ffd23f" : "rgba(30,40,86,0.78)";
+      ctx.fillStyle = editing ? "#ffd23f" : "rgba(36,43,64,0.78)";
       ctx.beginPath();
       ctx.arc(0, 0, E.r, 0, Math.PI * 2);
       ctx.fill();
@@ -1799,7 +1799,7 @@ export function createRenderer(canvas) {
     const Rz = pad.reset;
     const anyEdit = !!nearestEditedWall(g, p, 30);
     inFrame(pad, Rz.x, Rz.y, () => {
-      ctx.fillStyle = "rgba(30,40,86,0.78)";
+      ctx.fillStyle = "rgba(36,43,64,0.78)";
       ctx.beginPath();
       ctx.arc(0, 0, Rz.r, 0, Math.PI * 2);
       ctx.fill();
@@ -1820,7 +1820,7 @@ export function createRenderer(canvas) {
         const active = i === p.slot;
         const tier = TIER_COLOR[gun.def.tier];
         const s = r.h / 34; // text scale relative to the solo-mode slot
-        ctx.fillStyle = active ? "rgba(52,68,140,0.92)" : "rgba(30,40,86,0.6)";
+        ctx.fillStyle = active ? "rgba(48,58,88,0.92)" : "rgba(36,43,64,0.6)";
         rr(ctx, r.x, r.y, r.w, r.h, 8 * u * s);
         ctx.fill();
         ctx.strokeStyle = active ? tier : "rgba(255,255,255,0.15)";
@@ -1862,7 +1862,7 @@ export function createRenderer(canvas) {
     // BUILD toggle (sits over the attack stick, from its player's point of view)
     const on = mode !== "combat";
     inFrame(pad, B.x, B.y, () => {
-      ctx.fillStyle = on ? "#5aff96" : "rgba(30,40,86,0.75)";
+      ctx.fillStyle = on ? "#5aff96" : "rgba(36,43,64,0.75)";
       ctx.beginPath();
       ctx.arc(0, 0, B.r, 0, Math.PI * 2);
       ctx.fill();
@@ -1892,7 +1892,7 @@ export function createRenderer(canvas) {
         const active = i === p.slot;
         const tier = TIER_COLOR[gun.def.tier];
         const s = r.h / 34; // text scale relative to the solo-mode slot
-        ctx.fillStyle = active ? "rgba(52,68,140,0.92)" : "rgba(30,40,86,0.6)";
+        ctx.fillStyle = active ? "rgba(48,58,88,0.92)" : "rgba(36,43,64,0.6)";
         rr(ctx, r.x, r.y, r.w, r.h, 8 * u * s);
         ctx.fill();
         ctx.strokeStyle = active ? tier : "rgba(255,255,255,0.15)";
@@ -1928,7 +1928,7 @@ export function createRenderer(canvas) {
         const r = frameRect(slots[0]);
         const s = r.h / 34;
         const editing = mode === "edit";
-        ctx.fillStyle = editing ? "#ffd23f" : "rgba(30,40,86,0.75)";
+        ctx.fillStyle = editing ? "#ffd23f" : "rgba(36,43,64,0.75)";
         rr(ctx, r.x, r.y, r.w, r.h, 8 * u * s);
         ctx.fill();
         ctx.strokeStyle = "#ffd23f";
@@ -1943,7 +1943,7 @@ export function createRenderer(canvas) {
         const r = frameRect(slots[1]);
         const s = r.h / 34;
         const any = !!nearestEditedWall(g, p);
-        ctx.fillStyle = "rgba(30,40,86,0.75)";
+        ctx.fillStyle = "rgba(36,43,64,0.75)";
         rr(ctx, r.x, r.y, r.w, r.h, 8 * u * s);
         ctx.fill();
         ctx.strokeStyle = any ? "#8fd3ff" : "rgba(255,255,255,0.15)";
@@ -1966,8 +1966,8 @@ export function createRenderer(canvas) {
     ctx.setTransform(v.dpr, 0, 0, v.dpr, 0, 0);
     // backdrop around the arena: a rich indigo gradient, not black
     const bgGrad = ctx.createLinearGradient(0, 0, v.W, v.H);
-    bgGrad.addColorStop(0, "#2b3a6e");
-    bgGrad.addColorStop(1, "#3a2a66");
+    bgGrad.addColorStop(0, "#2c3446");
+    bgGrad.addColorStop(1, "#30304a");
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, v.W, v.H);
     if (!v.floor || v.floorTeams !== (g.numTeams || 2) || v.floorTheme !== ((g.world.map && g.world.map.theme) || "arena")) buildFloor(g.world, g.numTeams || 2);

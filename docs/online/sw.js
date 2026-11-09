@@ -1,5 +1,5 @@
-// Grid Clash Online offline cache, version ed53d8ffc5
-const CACHE = "gridclash-online-ed53d8ffc5";
+// Grid Clash Online offline cache, version 16cb970c35
+const CACHE = "gridclash-online-16cb970c35";
 const FILES = ["./", "./index.html", "./manifest.webmanifest", "./icon-180.png", "./icon-192.png", "./icon-512.png"];
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
