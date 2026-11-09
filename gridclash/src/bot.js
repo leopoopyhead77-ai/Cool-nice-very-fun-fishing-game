@@ -159,7 +159,7 @@ export function createBot(difficulty = "normal") {
 
       const losClear = lineClear(w, p.x, p.y, e.x, e.y);
       const canHit =
-        dist <= def.range * 0.97 &&
+        dist <= def.range * (def.flame ? 0.8 : 0.97) &&
         (def.type === "lob" || def.type === "rail" || losClear);
       s.blindT = canHit ? Math.max(0, s.blindT - dt * 3) : s.blindT + dt;
 
@@ -218,7 +218,12 @@ export function createBot(difficulty = "normal") {
           const ly = e.y + e.vy * tf * D.lead;
           aim = Math.atan2(ly - p.y, lx - p.x);
         }
-        if (s.aimT === 0) s.aimErr = (rand() - 0.5) * 2 * D.err;
+        if (s.aimT === 0) {
+          // like a person, it misses more against a target that's on the move
+          const moving = Math.min(1, Math.hypot(e.vx, e.vy) / 4.3);
+          const err = D.err + 0.09 * moving * Math.min(1, dist / 8);
+          s.aimErr = (rand() - 0.5) * 2 * err;
+        }
         s.aimT += dt;
         cmd.aiming = true;
         cmd.aimAngle = aim + s.aimErr;

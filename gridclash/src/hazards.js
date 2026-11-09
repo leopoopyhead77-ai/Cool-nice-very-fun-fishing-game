@@ -14,6 +14,12 @@ const TRAIN_DMG = 55;
 
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
+// teleporter balance: stand on a pad to charge it; then you (and that pair)
+// need a while before it works again
+export const TP_CHARGE = 0.6;   // seconds standing on the pad
+export const TP_COOLDOWN = 10;  // per player
+export const TP_PAIR_COOLDOWN = 3; // a pair rests after anyone uses it
+
 function newPac(g, k) {
   const h = g.map.pacHome;
   const cx = Math.floor(h.x) - 1 + k;
@@ -29,8 +35,11 @@ export function initHazards(g) {
   g.train = null;
   if (g.map.gimmick === "pacmen") for (let k = 0; k < 3; k++) g.pacs.push(newPac(g, k));
   if (g.map.gimmick === "train") g.train = { phase: "idle", t: 7 + g.rng() * 5, dir: 1, y: -20, pass: 0 };
+  g.tpCd = (g.map.teleporters || []).map(() => 0);
   for (const p of g.players) {
     p.tpLock = -1;
+    p.tpCd = 0;
+    p.tpCharge = 0;
     p.pacCd = 0;
     p.kx = 0;
     p.ky = 0;
@@ -39,19 +48,29 @@ export function initHazards(g) {
 
 // ---- teleporters ------------------------------------------------------------------
 
-// Step on a pad and you come out of its partner. You have to step off the pad
-// you arrived on before it will send you anywhere again.
-export function checkTeleport(g, p, api) {
+// Stand on a pad for a moment and you come out of its partner. After that you
+// have a personal cooldown, the pair rests briefly, and you have to step off
+// the pad you arrived on before it will send you anywhere again.
+export function checkTeleport(g, p, api, dt = 1 / 60) {
   const tps = g.map.teleporters || [];
   if (p.tpLock >= 0) {
     const pad = tps[p.tpLock >> 1][p.tpLock & 1];
     if (Math.hypot(p.x - pad.x, p.y - pad.y) > 0.7) p.tpLock = -1;
     else return;
   }
+  let onPad = false;
   for (let i = 0; i < tps.length; i++) {
     for (let k = 0; k < 2; k++) {
       const pad = tps[i][k];
       if (Math.hypot(p.x - pad.x, p.y - pad.y) < 0.42) {
+        onPad = true;
+        if (p.tpCd > 0 || (g.tpCd && g.tpCd[i] > 0)) continue;
+        p.tpCharge = (p.tpCharge || 0) + dt;
+        p.tpPad = i * 2 + k;
+        if (p.tpCharge < TP_CHARGE) continue;
+        p.tpCharge = 0;
+        p.tpCd = TP_COOLDOWN;
+        if (g.tpCd) g.tpCd[i] = TP_PAIR_COOLDOWN;
         const dest = tps[i][1 - k];
         const from = { x: p.x, y: p.y };
         p.x = dest.x;
@@ -71,6 +90,7 @@ export function checkTeleport(g, p, api) {
       }
     }
   }
+  if (!onPad) p.tpCharge = 0;
 }
 
 // ---- Pac-Men ------------------------------------------------------------------------
@@ -83,7 +103,7 @@ function nextPacCell(g, pc) {
   if (!options.length) return;
   let pick = options[Math.floor(g.rng() * options.length)];
   // often chase the nearest player
-  if (g.rng() < 0.55) {
+  if (g.rng() < 0.45) {
     let best = Infinity;
     for (const o of options) {
       const nx = pc.cx + o[0] + 0.5;
@@ -240,7 +260,11 @@ function updateTrain(g, tr, dt, api) {
 }
 
 export function updateHazards(g, dt, api) {
-  for (const p of g.players) p.pacCd = Math.max(0, (p.pacCd || 0) - dt);
+  for (const p of g.players) {
+    p.pacCd = Math.max(0, (p.pacCd || 0) - dt);
+    p.tpCd = Math.max(0, (p.tpCd || 0) - dt);
+  }
+  if (g.tpCd) for (let i = 0; i < g.tpCd.length; i++) g.tpCd[i] = Math.max(0, g.tpCd[i] - dt);
   for (const pc of g.pacs || []) updatePac(g, pc, dt, api);
   if (g.train) updateTrain(g, g.train, dt, api);
 }

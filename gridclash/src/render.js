@@ -418,11 +418,24 @@ export function createRenderer(canvas) {
   function drawTeleporters(g) {
     const TS = v.TS;
     const tps = (g.map && g.map.teleporters) || [];
+    const me = g.players[v.local ?? 0];
     tps.forEach((pair, i) => {
-      const col = i % 2 ? "255,122,224" : "92,246,255";
-      for (const pad of pair) {
+      const resting = (g.tpCd && g.tpCd[i] > 0) || (me && !v.L.pvp && me.tpCd > 0);
+      const col = resting ? "120,130,150" : i % 2 ? "255,122,224" : "92,246,255";
+      pair.forEach((pad, k) => {
         const x = sx(pad.x);
         const y = sy(pad.y);
+        // someone charging this pad: a filling ring
+        for (const q of g.players) {
+          if (!q.alive || !(q.tpCharge > 0) || q.tpPad !== i * 2 + k) continue;
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth = Math.max(2, TS * 0.1);
+          ctx.beginPath();
+          ctx.arc(x, y, TS * 0.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, q.tpCharge / 0.6));
+          ctx.stroke();
+        }
+        // your own cooldown, in seconds, over each pad
+        if (me && !v.L.pvp && me.tpCd > 0) label(String(Math.ceil(me.tpCd)), x, y - TS * 0.62, TS * 0.42, "rgba(220,225,235,0.85)", "center", 900);
         const grad = ctx.createRadialGradient(x, y, 0, x, y, TS * 0.55);
         grad.addColorStop(0, `rgba(${col},0.55)`);
         grad.addColorStop(1, `rgba(${col},0)`);
@@ -438,7 +451,7 @@ export function createRenderer(canvas) {
           ctx.arc(x, y, TS * (0.18 + k * 0.1), a, a + Math.PI * 1.3);
           ctx.stroke();
         }
-      }
+      });
     });
   }
 

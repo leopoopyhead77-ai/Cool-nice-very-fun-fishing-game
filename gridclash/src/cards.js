@@ -80,14 +80,17 @@ export const rarityRank = (r) => RARITY_ORDER.indexOf(r);
 
 // Deal n cards of different kinds. Rarity is rolled first (weighted), then a
 // card of that rarity whose kind isn't already in the hand.
-export function dealHand(rng, n = 3) {
+// luck (comeback): whoever lost the last round gets better odds of rare cards.
+const LUCKY = { common: 0.5, rare: 1.15, epic: 1.7, legendary: 2 };
+export function dealHand(rng, n = 3, luck = false) {
   const hand = [];
-  const total = Object.values(RARITIES).reduce((a, r) => a + r.weight, 0);
+  const weight = (k, r) => r.weight * (luck ? LUCKY[k] : 1);
+  const total = Object.entries(RARITIES).reduce((a, [k, r]) => a + weight(k, r), 0);
   for (let tries = 0; hand.length < n && tries < 200; tries++) {
     let roll = rng() * total;
     let rarity = "common";
     for (const [k, r] of Object.entries(RARITIES)) {
-      roll -= r.weight;
+      roll -= weight(k, r);
       if (roll <= 0) {
         rarity = k;
         break;
@@ -100,14 +103,26 @@ export function dealHand(rng, n = 3) {
   return hand.map((c) => c.id);
 }
 
-// Buffs after applying a list of card ids, with sane caps.
+// Buffs after applying a list of card ids. Caps keep a lucky streak of
+// Legendaries from snowballing a match: stacking still helps, but only so far.
+export const CAPS = {
+  dmg: 1.6, rate: 0.65, speed: 1.3, reload: 0.5, mag: 2, maxHp: 60,
+  shield: 120, armor: 0.4, lifesteal: 0.3, regen: 4, wallHp: 2.5, mats: 120,
+};
 export function buffsFrom(ids) {
   const b = baseBuffs();
   for (const id of ids) CARD_BY_ID[id]?.apply(b);
-  b.rate = Math.max(0.45, b.rate);
-  b.reload = Math.max(0.35, b.reload);
-  b.speed = Math.min(1.6, b.speed);
-  b.armor = Math.min(0.6, b.armor);
-  b.lifesteal = Math.min(0.5, b.lifesteal);
+  b.dmg = Math.min(CAPS.dmg, b.dmg);
+  b.rate = Math.max(CAPS.rate, b.rate);
+  b.speed = Math.min(CAPS.speed, b.speed);
+  b.reload = Math.max(CAPS.reload, b.reload);
+  b.mag = Math.min(CAPS.mag, b.mag);
+  b.maxHp = Math.min(CAPS.maxHp, b.maxHp);
+  b.shield = Math.min(CAPS.shield, b.shield);
+  b.armor = Math.min(CAPS.armor, b.armor);
+  b.lifesteal = Math.min(CAPS.lifesteal, b.lifesteal);
+  b.regen = Math.min(CAPS.regen, b.regen);
+  b.wallHp = Math.min(CAPS.wallHp, b.wallHp);
+  b.mats = Math.min(CAPS.mats, b.mats);
   return b;
 }

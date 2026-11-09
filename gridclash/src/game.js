@@ -178,7 +178,8 @@ const CARD_TIME = 25;
 function startCards(g) {
   g.state = "cards";
   g.stateT = CARD_TIME;
-  g.offers = g.players.map(() => dealHand(g.rng, 3));
+  // comeback: the side that lost the last round gets luckier cards
+  g.offers = g.players.map((p) => dealHand(g.rng, 3, g.roundWinner >= 0 && p.team !== g.roundWinner));
   g.picks = g.players.map(() => -1);
   emit(g, { t: "cards" });
 }
@@ -537,7 +538,7 @@ function updatePlayers(g, dt) {
       if (Math.abs(p.kx) + Math.abs(p.ky) < 0.1) p.kx = p.ky = 0;
     }
     collideCircle(g.world, p);
-    checkTeleport(g, p, HAZARD_API);
+    checkTeleport(g, p, HAZARD_API, dt);
 
     p.mats = Math.min(MAX_MATS, p.mats + MATS_REGEN * p.buffs.matsRegen * dt);
     if (p.slowT > 0) p.slowT = Math.max(0, p.slowT - dt);
@@ -662,7 +663,8 @@ function updateBullets(g, dt) {
     let target = null;
     for (const p of g.players) {
       if (!p.alive || p.team === g.players[b.owner].team) continue;
-      const t = segCircle(b.x, b.y, b.dx, b.dy, hitDist, p.x, p.y, p.r);
+      // flames are wide puffs of fire, not thin bullets
+      const t = segCircle(b.x, b.y, b.dx, b.dy, hitDist, p.x, p.y, p.r + (b.def.flame ? 0.28 : b.def.slow ? 0.22 : 0));
       if (t >= 0 && t <= hitDist) {
         hitDist = t;
         target = p;

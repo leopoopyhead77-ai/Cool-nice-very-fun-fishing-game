@@ -35,8 +35,9 @@ let ok = true; const check = (c, m) => { console.log((c ? "ok   " : "FAIL ") + m
     return { dmg: hp - g.players[1].hp, firstGone, walls: g.world.walls.length };
   };
   const open = shot(0), one = shot(1), two = shot(2);
-  check(open.dmg === 42, `Railgun hits for 42 in the open (${open.dmg})`);
-  check(one.dmg > 0 && one.dmg < 42 && one.firstGone, `Railgun blasts through one wall, destroying it, 30% weaker (${one.dmg})`);
+  const RAIL = (await import("../src/guns.js")).GUN_BY_ID.rail.dmg;
+  check(open.dmg === RAIL, `Railgun hits for ${RAIL} in the open (${open.dmg})`);
+  check(one.dmg > 0 && one.dmg < RAIL && one.firstGone, `Railgun blasts through one wall, destroying it, 30% weaker (${one.dmg})`);
   check(two.dmg === 0 && two.firstGone, `Railgun is stopped by a second wall (${two.dmg} dmg)`);
 }
 // grenade launcher: limited supply per round, then it switches to the other gun
@@ -71,19 +72,32 @@ let ok = true; const check = (c, m) => { console.log((c ? "ok   " : "FAIL ") + m
     check(bad.length === 0, `${m.name}: spawns, medkits and teleporters are on open floor`);
   }
 }
-// teleporters
+// teleporters: charge on the pad, then a cooldown (no teleporting every second)
 {
   const g = createGame({ loadouts: [["ar", "ar"], ["ar", "ar"]], names: ["a", "b"], controllers: [idle, idle], seed: 2, map: "arena" });
   g.state = "fight";
   const p = g.players[0];
-  p.x = 2.5; p.y = 1.5;
-  g.controllers[0] = { poll: () => ({ mx: -1, my: 0, aiming: false, actions: [] }) };
-  for (let i = 0; i < 60 && p.x < 20; i++) step(g, 1 / 60);
-  g.controllers[0] = idle;
-  p.vx = p.vy = 0;
-  check(Math.hypot(p.x - 28.5, p.y - 18.5) < 1, `stepping on a teleporter sends you to its partner (now at ${p.x.toFixed(1)}, ${p.y.toFixed(1)})`);
+  const at = (x, y) => Math.hypot(p.x - x, p.y - y) < 1;
+  p.x = 1.5; p.y = 1.5; p.vx = p.vy = 0;
+  for (let i = 0; i < 20; i++) step(g, 1 / 60); // 0.33 s
+  check(at(1.5, 1.5), "a teleporter needs a moment to charge (no instant escape)");
+  for (let i = 0; i < 40; i++) step(g, 1 / 60);
+  check(at(28.5, 18.5), `standing on it sends you to its partner (now at ${p.x.toFixed(1)}, ${p.y.toFixed(1)})`);
   for (let i = 0; i < 120; i++) step(g, 1 / 60);
-  check(Math.hypot(p.x - 28.5, p.y - 18.5) < 1, "standing on the exit pad doesn't bounce you back");
+  check(at(28.5, 18.5), "standing on the exit pad doesn't bounce you back");
+  // step off, step on again right away: still cooling down
+  p.x = 27; p.y = 18.5;
+  for (let i = 0; i < 5; i++) step(g, 1 / 60);
+  p.x = 28.5; p.y = 18.5;
+  for (let i = 0; i < 60 * 3; i++) step(g, 1 / 60);
+  check(at(28.5, 18.5), `you can't teleport again straight away (cooldown ${p.tpCd.toFixed(1)}s left)`);
+  for (let i = 0; i < 60 * 9 && !at(1.5, 1.5); i++) step(g, 1 / 60);
+  check(at(1.5, 1.5), "after the 10 s cooldown it works again");
+  // the pair rests for everyone after one use
+  const q = g.players[1];
+  q.x = 28.5; q.y = 18.5; q.vx = q.vy = 0;
+  for (let i = 0; i < 60; i++) step(g, 1 / 60);
+  check(Math.hypot(q.x - 28.5, q.y - 18.5) < 1, "a pair rests for a moment after anyone uses it");
 }
 // Pac-Men: bite, knock back, and can be shot down
 {
@@ -122,6 +136,23 @@ let ok = true; const check = (c, m) => { console.log((c ? "ok   " : "FAIL ") + m
   check(ran && p.hp <= hp - 55 + 0.5, `a train hits a player on the tracks (${hp} → ${p.hp})`);
   check(Math.abs(p.x - 15) > 1.2, "and knocks them off the line");
   check(!g.world.wallAt[5 * 30 + 14] && !g.world.wallAt[5 * 30 + 15], "walls on the rails get smashed");
+}
+
+// cards: stacking is capped; the side that lost the last round gets luckier hands
+{
+  const { buffsFrom, dealHand, CARD_BY_ID, rarityRank, CAPS } = await import("../src/cards.js");
+  const b = buffsFrom(["dmg4", "dmg4", "dmg4", "shield4", "shield4", "armor3", "armor3", "leech2", "leech2", "speed3", "speed3"]);
+  check(b.dmg === CAPS.dmg && b.shield === CAPS.shield && b.armor === CAPS.armor && b.lifesteal === CAPS.lifesteal && b.speed === CAPS.speed,
+    `stacked Legendaries hit the caps (dmg ×${b.dmg}, shield ${b.shield}, armour ${b.armor}, lifesteal ${b.lifesteal}, speed ×${b.speed})`);
+  let seed = 7;
+  const rng = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const avg = (luck) => {
+    let t = 0;
+    for (let i = 0; i < 400; i++) for (const id of dealHand(rng, 3, luck)) t += rarityRank(CARD_BY_ID[id].rarity);
+    return t / 1200;
+  };
+  const normal = avg(false), lucky = avg(true);
+  check(lucky > normal + 0.25, `comeback hands are rarer on average (${normal.toFixed(2)} → ${lucky.toFixed(2)})`);
 }
 
 process.exit(ok ? 0 : 1);

@@ -117,7 +117,16 @@ Pick on the main menu (both apps; the host picks online): **Arena**, **Pac-Maze*
 | **Pac-Maze** | A neon maze with pellets and a ghost house. Three **Pac-Men** roam the corridors, often chasing the nearest player: they bite (18 damage plus knockback), and they chew through any wall in their way. Shoot one down (80 HP) and it respawns from the ghost house 9 seconds later. The wrap-around tunnels at the edges are teleporters. |
 | **Desert Rail** | Sand, sandstone and cacti, with a **railway down the middle**. Every so often the signal lights flash and "⚠ TRAIN ⚠" shows on the track. A couple of seconds later a train rushes through: 55 damage to anyone on the rails, knocking them off and smashing any walls on the track. Teleporters at the top and bottom cross the line safely. |
 
-**Teleporters** (swirling cyan/pink pads, in pairs): step on one and you come out of its partner. Step off the pad you arrived on before it will send you anywhere again.
+**Teleporters** (swirling cyan/pink pads, in pairs): stand on one for **0.6 s** (a white ring fills) and you come out of its partner. After that you have a **10 s cooldown**, shown as a countdown over the pads, and the pair you used rests for **3 s** for everyone. Pads turn grey while they can't be used. You also have to step off the pad you arrived on before it will send you anywhere again.
+
+## Balance
+
+Balance is checked two ways (see `build/` and the commit history):
+
+- **Time to kill**: every gun's time to kill 100 HP (assuming every shot hits) sits in a band that fits its range. Close-range guns kill fastest (≈0.9–1.2 s), mid-range guns are in the middle, and long-range and explosive guns are slower (≈1.8–2.6 s) but out-range everything or go over walls.
+- **Head to head**: each gun plays 20 hard-bot matches against the assault rifle. Bots miss more against moving targets, like people do. Almost every gun lands between 5 and 15 wins out of 20.
+
+**Buff cards** have caps so a lucky streak can't snowball: damage ×1.6, shield 120, armour 40%, lifesteal 30%, speed ×1.3, fire rate +35%, max health +60, regen 4/s. **Comeback luck:** whoever lost the last round is dealt rarer cards on average.
 
 ## Match rules
 
