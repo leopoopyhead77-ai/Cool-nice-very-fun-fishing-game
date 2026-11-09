@@ -1,9 +1,9 @@
 :root {
-  --bg: #0b0f18;
-  --card: rgba(14, 20, 33, 0.92);
-  --line: rgba(255, 255, 255, 0.1);
+  --bg: #273463;
+  --card: rgba(38, 50, 102, 0.94);
+  --line: rgba(255, 255, 255, 0.16);
   --text: #eef3ff;
-  --muted: #9aa7c2;
+  --muted: #b4c0e0;
   --blue: #3fa7ff;
   --red: #ff4d5e;
   --green: #5aff96;
@@ -11,6 +11,7 @@
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body {
+  background: linear-gradient(135deg, #2b3a6e, #3a2a66) fixed;
   margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   user-select: none; -webkit-user-select: none; touch-action: none; overscroll-behavior: none;
@@ -32,10 +33,10 @@ html, body { -webkit-touch-callout: none; }
 .screen {
   position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
   padding: 12px max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left));
-  background: radial-gradient(ellipse at center, rgba(11, 15, 24, 0.55), rgba(11, 15, 24, 0.9));
+  background: radial-gradient(ellipse at center, rgba(40, 52, 110, 0.45), rgba(30, 30, 80, 0.85));
   z-index: 5;
 }
-.screen.dim { background: rgba(5, 8, 14, 0.7); }
+.screen.dim { background: rgba(28, 34, 80, 0.72); }
 .hidden { display: none !important; }
 
 .menu-card {
@@ -153,7 +154,7 @@ body.pvp #rotate { display: none !important; }
 }
 
 /* ---- online ---- */
-.online-btn { background: linear-gradient(180deg, #2c3d5c, #1d2940); border-color: #4fb4ff; }
+.online-btn { background: linear-gradient(180deg, #3f5ea8, #2c4384); border-color: #4fb4ff; }
 .inp {
   flex: 1; font: inherit; font-weight: 800; font-size: 16px; color: var(--text);
   background: rgba(255, 255, 255, 0.07); border: 1px solid var(--line); border-radius: 10px;
@@ -251,7 +252,7 @@ body.is-online .online-only { display: block; }
 .sel-desc { flex: 1; margin: 0; font-size: 11.5px; color: var(--muted); line-height: 1.3; min-height: 2.6em; }
 .sel-ready { min-width: 110px; }
 .sel-ready:disabled { opacity: 0.4; }
-.sel-back { position: fixed; left: max(8px, env(safe-area-inset-left)); bottom: 8px; z-index: 6; background: rgba(8,12,20,0.85); }
+.sel-back { position: fixed; left: max(8px, env(safe-area-inset-left)); bottom: 8px; z-index: 6; background: rgba(30,40,86,0.85); }
 .sel-wrap.two ~ .sel-back {
   bottom: auto; top: 50%; left: 50%; transform: translate(-50%, -50%);
   width: 34px; height: 34px; padding: 0; border-radius: 50%; font-size: 0;

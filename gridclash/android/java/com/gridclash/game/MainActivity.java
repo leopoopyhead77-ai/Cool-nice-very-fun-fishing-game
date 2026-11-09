@@ -152,7 +152,7 @@ public class MainActivity extends Activity {
         web = new WebView(this);
         web.setLayoutParams(new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        web.setBackgroundColor(Color.parseColor("#0B0F18"));
+        web.setBackgroundColor(Color.parseColor("#273463"));
         web.setOverScrollMode(View.OVER_SCROLL_NEVER);
         web.setHapticFeedbackEnabled(true);
 

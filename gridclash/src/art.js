@@ -4,6 +4,22 @@
 // of buff card.
 
 import { GUN_BY_ID } from "./guns.js";
+import { GUN_ART } from "./gunart.js";
+
+// The weapon sprites as ready-to-draw images (browser only). Until an image
+// has loaded, the hand-drawn vector version below is used instead.
+const GUN_IMG = {};
+if (typeof Image !== "undefined") {
+  for (const [id, url] of Object.entries(GUN_ART)) {
+    const im = new Image();
+    im.src = url;
+    GUN_IMG[id] = im;
+  }
+}
+const spriteFor = (id) => {
+  const im = GUN_IMG[id];
+  return im && im.complete && im.naturalWidth ? im : null;
+};
 
 let BODY = "#2a303c";
 let METAL = "#5b6577";
@@ -21,6 +37,13 @@ export const GUN_LEN = {
 // roughly centred on y = 0, "up" = -y. Returns nothing.
 // light: lighter metals, for drawing small on the dark arena floor
 export function drawGun(ctx, id, L, light = false) {
+  const img = spriteFor(id);
+  if (img) {
+    // sprite: L long, its grip hanging below the line it points along
+    const h = (L * img.naturalHeight) / img.naturalWidth;
+    ctx.drawImage(img, 0, -h * 0.42, L, h);
+    return;
+  }
   BODY = light ? "#5a6478" : "#2a303c";
   METAL = light ? "#a3adc0" : "#5b6577";
   DARK = light ? "#323a48" : "#151922";
@@ -288,6 +311,8 @@ export function drawGun(ctx, id, L, light = false) {
 // A gun icon as an image URL (for DOM screens). Cached.
 const iconCache = new Map();
 export function gunIconURL(id, w = 168, h = 72) {
+  // DOM icons can use the sprite itself (scaled with CSS object-fit)
+  if (GUN_ART[id]) return GUN_ART[id];
   const key = `${id}:${w}x${h}`;
   if (iconCache.has(key)) return iconCache.get(key);
   const c = document.createElement("canvas");

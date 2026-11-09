@@ -69,7 +69,7 @@ export function createRenderer(canvas) {
     c.height = Math.ceil(GH * TS);
     const f = c.getContext("2d");
     const hash = (x, y) => ((x * 73856093) ^ (y * 19349663)) >>> 0;
-    const base = theme === "pac" ? ["#05070f", "#070a16"] : theme === "desert" ? ["#7a6240", "#806745"] : ["#1b2232", "#1e2638"];
+    const base = theme === "pac" ? ["#121c52", "#152059"] : theme === "desert" ? ["#d6b072", "#dbb77b"] : ["#4f8f4a", "#559650"];
     f.fillStyle = base[0];
     f.fillRect(0, 0, c.width, c.height);
     for (let y = 0; y < GH; y++) {
@@ -85,10 +85,10 @@ export function createRenderer(canvas) {
       for (let y = 0; y < GH; y++) {
         for (let x = 0; x < GW; x++) {
           const h = hash(x, y);
-          f.fillStyle = h % 2 ? "rgba(255,230,180,0.08)" : "rgba(60,40,20,0.12)";
+          f.fillStyle = h % 2 ? "rgba(255,245,215,0.25)" : "rgba(150,100,40,0.18)";
           f.fillRect((x + (h % 7) / 8) * TS, (y + ((h >> 3) % 7) / 8) * TS, TS * 0.08, TS * 0.08);
           if (h % 11 === 0) {
-            f.strokeStyle = "rgba(255,225,170,0.12)";
+            f.strokeStyle = "rgba(160,110,50,0.22)";
             f.lineWidth = Math.max(1, TS * 0.05);
             f.beginPath();
             f.arc((x + 0.5) * TS, (y + 1) * TS, TS * 0.7, Math.PI * 1.15, Math.PI * 1.85);
@@ -98,15 +98,40 @@ export function createRenderer(canvas) {
       }
       // the railway: ballast, sleepers, rails
       const tx = world.map.track.x;
-      f.fillStyle = "#5b4a38";
+      f.fillStyle = "#9c8466";
       f.fillRect((tx - 1.05) * TS, 0, 2.1 * TS, c.height);
-      f.fillStyle = "#3e2a18";
+      f.fillStyle = "#6a4526";
       for (let y = 0.2; y < GH; y += 0.55) f.fillRect((tx - 0.95) * TS, y * TS, 1.9 * TS, 0.2 * TS);
       for (const rx of [tx - 0.62, tx + 0.62]) {
         f.fillStyle = "rgba(0,0,0,0.35)";
         f.fillRect((rx - 0.05) * TS, 0, 0.14 * TS, c.height);
         f.fillStyle = "#c3c9d3";
         f.fillRect((rx - 0.07) * TS, 0, 0.11 * TS, c.height);
+      }
+    }
+    if (theme === "arena") {
+      // grass tufts and little flowers on the field
+      for (let y = 0; y < GH; y++) {
+        for (let x = 0; x < GW; x++) {
+          const h = hash(x, y);
+          if (h % 3 === 0) {
+            f.strokeStyle = "rgba(160,215,120,0.45)";
+            f.lineWidth = Math.max(1, TS * 0.04);
+            const gx = (x + (h % 9) / 10) * TS;
+            const gy = (y + ((h >> 4) % 9) / 10) * TS;
+            f.beginPath();
+            f.moveTo(gx, gy);
+            f.lineTo(gx - TS * 0.06, gy - TS * 0.14);
+            f.moveTo(gx, gy);
+            f.lineTo(gx + TS * 0.05, gy - TS * 0.16);
+            f.stroke();
+          } else if (h % 17 === 1) {
+            f.fillStyle = h % 2 ? "#ffe066" : "#ff9ad5";
+            f.beginPath();
+            f.arc((x + 0.5) * TS, (y + 0.5) * TS, TS * 0.06, 0, Math.PI * 2);
+            f.fill();
+          }
+        }
       }
     }
     if (theme === "pac") {
@@ -135,7 +160,7 @@ export function createRenderer(canvas) {
     f.fillRect(c.width - TS * 5, 0, TS * 5, c.height);
     }
     // grid
-    f.strokeStyle = "rgba(140,160,200,0.10)";
+    f.strokeStyle = theme === "pac" ? "rgba(120,150,255,0.12)" : "rgba(255,255,255,0.12)";
     f.lineWidth = Math.max(1, TS * 0.04);
     f.beginPath();
     for (let x = 0; x <= GW; x++) {
@@ -150,7 +175,7 @@ export function createRenderer(canvas) {
     // centre line
     if (theme === "arena") {
     f.setLineDash([TS * 0.4, TS * 0.4]);
-    f.strokeStyle = "rgba(220,230,255,0.13)";
+    f.strokeStyle = "rgba(255,255,255,0.3)";
     f.lineWidth = TS * 0.08;
     f.beginPath();
     f.moveTo(c.width / 2, 0);
@@ -166,7 +191,7 @@ export function createRenderer(canvas) {
         const py = y * TS;
         if (theme === "pac") {
           // neon maze walls: glowing outline on the outer edges of each block
-          f.fillStyle = "#0a1038";
+          f.fillStyle = "#1b2a8a";
           f.fillRect(px, py, TS, TS);
           f.save();
           f.strokeStyle = "#3d5bff";
@@ -208,21 +233,21 @@ export function createRenderer(canvas) {
         }
         if (theme === "desert") {
           // sandstone
-          f.fillStyle = "#4a3320";
+          f.fillStyle = "rgba(90,50,20,0.4)";
           f.fillRect(px + TS * 0.06, py + TS * 0.12, TS, TS);
-          f.fillStyle = "#a8743e";
+          f.fillStyle = "#9a5530";
           f.fillRect(px, py, TS, TS);
-          f.fillStyle = "#c48a4c";
+          f.fillStyle = "#b8693c";
           f.fillRect(px + TS * 0.08, py + TS * 0.08, TS * 0.84, TS * 0.62);
           f.fillStyle = "rgba(90,50,20,0.35)";
           f.fillRect(px + TS * 0.08, py + TS * 0.38, TS * 0.84, TS * 0.06);
           continue;
         }
-        f.fillStyle = "#11151f";
+        f.fillStyle = "rgba(20,40,20,0.45)";
         f.fillRect(px + TS * 0.06, py + TS * 0.12, TS, TS);
-        f.fillStyle = "#4a5366";
+        f.fillStyle = "#7d8799";
         f.fillRect(px, py, TS, TS);
-        f.fillStyle = "#5d677d";
+        f.fillStyle = "#9aa5b8";
         f.fillRect(px + TS * 0.08, py + TS * 0.08, TS * 0.84, TS * 0.7);
         f.fillStyle = "rgba(255,255,255,0.08)";
         f.fillRect(px + TS * 0.08, py + TS * 0.08, TS * 0.84, TS * 0.12);
@@ -238,7 +263,7 @@ export function createRenderer(canvas) {
       f.fillRect(14 * TS, 9.42 * TS, 2 * TS, 0.16 * TS);
     }
     // border
-    f.strokeStyle = theme === "pac" ? "#3d5bff" : theme === "desert" ? "#a8743e" : "#5a6884";
+    f.strokeStyle = theme === "pac" ? "#3d5bff" : theme === "desert" ? "#9a5530" : "#2f6b2c";
     f.lineWidth = TS * 0.12;
     f.strokeRect(0, 0, c.width, c.height);
     v.floor = c;
@@ -403,7 +428,7 @@ export function createRenderer(canvas) {
       }
       if (hpk < 0.3) {
         // a chunk knocked out of the corner
-        ctx.fillStyle = "#1b2232";
+        ctx.fillStyle = "rgba(0,0,0,0.28)";
         ctx.beginPath();
         ctx.moveTo(x0 + TS, ty);
         ctx.lineTo(x0 + TS * 0.68, ty);
@@ -1078,11 +1103,11 @@ export function createRenderer(canvas) {
       const bad = place.blocked[i] || !afford;
       const x = sx(cx);
       const y = sy(cy);
-      ctx.fillStyle = bad ? `rgba(255,80,80,${0.18 * strong})` : `rgba(90,255,150,${0.16 * strong})`;
+      ctx.fillStyle = bad ? `rgba(255,80,80,${0.22 * strong})` : `rgba(120,235,255,${0.22 * strong})`;
       ctx.fillRect(x, y, TS, TS);
-      ctx.fillStyle = bad ? `rgba(160,40,40,${0.45 * strong})` : `rgba(40,150,90,${0.45 * strong * pulse})`;
+      ctx.fillStyle = bad ? `rgba(160,40,40,${0.5 * strong})` : `rgba(40,140,190,${0.55 * strong * pulse})`;
       ctx.fillRect(x, y + TS - lift, TS, lift);
-      ctx.fillStyle = bad ? `rgba(255,90,90,${0.35 * strong})` : `rgba(110,255,170,${0.38 * strong * pulse})`;
+      ctx.fillStyle = bad ? `rgba(255,90,90,${0.4 * strong})` : `rgba(150,240,255,${0.5 * strong * pulse})`;
       ctx.fillRect(x, y - lift, TS, TS);
     });
     const c0 = place.cells[0];
@@ -1091,7 +1116,7 @@ export function createRenderer(canvas) {
     const gy = sy(Math.min(c0[1], c2[1])) - lift;
     const gw = (Math.abs(c2[0] - c0[0]) + 1) * TS;
     const gh = (Math.abs(c2[1] - c0[1]) + 1) * TS;
-    ctx.strokeStyle = ok ? `rgba(160,255,200,${0.95 * strong})` : `rgba(255,120,120,${0.95 * strong})`;
+    ctx.strokeStyle = ok ? `rgba(230,250,255,${0.95 * strong})` : `rgba(255,120,120,${0.95 * strong})`;
     ctx.lineWidth = Math.max(1.5, TS * 0.08);
     ctx.strokeRect(gx + 1, gy + 1, gw - 2, gh - 2);
     if (!afford) label("need 30 ▰", gx + gw / 2, gy - TS * 0.45, TS * 0.5, "#ff9090", "center", 900);
@@ -1101,7 +1126,7 @@ export function createRenderer(canvas) {
       const cx = sx(mx2 + 0.5);
       const cy = sy(my2 + 0.5) - lift;
       const r = TS * 0.62;
-      const col = ok ? "#a0ffc8" : "#ff8080";
+      const col = ok ? "#ffffff" : "#ff8080";
       ctx.strokeStyle = col;
       ctx.lineWidth = Math.max(1.5, TS * 0.08);
       ctx.beginPath();
@@ -1123,7 +1148,7 @@ export function createRenderer(canvas) {
     // tether from builder to the drop point
     const [mx, my] = place.cells[1];
     ctx.setLineDash([TS * 0.15, TS * 0.15]);
-    ctx.strokeStyle = ok ? `rgba(140,255,190,${0.5 * strong})` : `rgba(255,110,110,${0.5 * strong})`;
+    ctx.strokeStyle = ok ? `rgba(230,250,255,${0.6 * strong})` : `rgba(255,110,110,${0.5 * strong})`;
     ctx.lineWidth = Math.max(1, TS * 0.05);
     ctx.beginPath();
     ctx.moveTo(sx(p.x), sy(p.y));
@@ -1190,7 +1215,7 @@ export function createRenderer(canvas) {
 
   function hpBar(x, y, w, h, p, align) {
     const k = Math.max(0, p.hp / (p.maxHp || MAX_HP));
-    ctx.fillStyle = "rgba(8,12,20,0.7)";
+    ctx.fillStyle = "rgba(30,40,86,0.7)";
     rr(ctx, x, y, w, h, h / 2);
     ctx.fill();
     const fw = Math.max(h, (w - 4) * k);
@@ -1218,7 +1243,7 @@ export function createRenderer(canvas) {
 
   function drawPause() {
     const P = v.L.pause;
-    ctx.fillStyle = "rgba(8,12,20,0.7)";
+    ctx.fillStyle = "rgba(30,40,86,0.7)";
     ctx.beginPath();
     ctx.arc(P.x, P.y, P.r, 0, Math.PI * 2);
     ctx.fill();
@@ -1254,7 +1279,7 @@ export function createRenderer(canvas) {
     } else if (g.state === "roundEnd") {
       const won = g.roundWinner === me;
       const txt = g.roundWinner < 0 ? "DRAW" : won ? "ROUND WON" : "ROUND LOST";
-      ctx.fillStyle = "rgba(8,12,20,0.55)";
+      ctx.fillStyle = "rgba(30,40,86,0.55)";
       ctx.fillRect(-bandLen / 2, -34 * u, bandLen, 68 * u);
       label(txt, 0, 0, 34 * u, g.roundWinner < 0 ? "#fff" : won ? "#6dff9a" : "#ff6b6b", "center", 900);
     }
@@ -1278,7 +1303,7 @@ export function createRenderer(canvas) {
         const n = g.numTeams;
         const chip = 30 * u;
         const tw = 74 * u + n * (chip + 4 * u);
-        ctx.fillStyle = "rgba(8,12,20,0.72)";
+        ctx.fillStyle = "rgba(30,40,86,0.72)";
         rr(ctx, cx - tw / 2, 4 * u, tw, 32 * u, 16 * u);
         ctx.fill();
         label(timerText(g), cx - tw / 2 + 36 * u, ty - 4 * u, 13 * u, g.timeLeft <= 10 ? "#ff7a7a" : "#fff");
@@ -1297,7 +1322,7 @@ export function createRenderer(canvas) {
         }
       }
       if (!ffa) {
-      ctx.fillStyle = "rgba(8,12,20,0.72)";
+      ctx.fillStyle = "rgba(30,40,86,0.72)";
       rr(ctx, cx - 120 * u, 4 * u, 240 * u, 32 * u, 16 * u);
       ctx.fill();
       ctx.fillStyle = TEAM[0].main;
@@ -1344,7 +1369,7 @@ export function createRenderer(canvas) {
       for (const pad of L.pads) {
         inFrame(pad, pad.info.x, pad.info.y, () => {
           const mine = pad.team;
-          ctx.fillStyle = "rgba(8,12,20,0.78)";
+          ctx.fillStyle = "rgba(30,40,86,0.78)";
           rr(ctx, -66 * u, -9 * u, 132 * u, 18 * u, 9 * u);
           ctx.fill();
           ctx.fillStyle = TEAM[mine].main;
@@ -1374,7 +1399,7 @@ export function createRenderer(canvas) {
       });
     } else {
       // shared screen: a compact score pill both players can read
-      ctx.fillStyle = "rgba(8,12,20,0.78)";
+      ctx.fillStyle = "rgba(30,40,86,0.78)";
       rr(ctx, cx - 70 * u, 1 * u, 140 * u, 16 * u, 8 * u);
       ctx.fill();
       ctx.fillStyle = TEAM[0].main;
@@ -1461,8 +1486,8 @@ export function createRenderer(canvas) {
     }
     const grad = ctx.createLinearGradient(0, -h / 2, 0, h / 2);
     grad.addColorStop(0, shade(R.color, 0.42));
-    grad.addColorStop(0.55, "#141c2e");
-    grad.addColorStop(1, "#0d1322");
+    grad.addColorStop(0.55, "#2a3770");
+    grad.addColorStop(1, "#1f2a5c");
     ctx.fillStyle = grad;
     rr(ctx, -w / 2, -h / 2, w, h, 12 * u);
     ctx.fill();
@@ -1501,7 +1526,7 @@ export function createRenderer(canvas) {
   function drawCardPhase(g, meta) {
     const L = v.L;
     const u = L.u;
-    ctx.fillStyle = "rgba(5,8,14,0.78)";
+    ctx.fillStyle = "rgba(24,30,78,0.8)";
     ctx.fillRect(0, 0, v.W, v.H);
     for (const pad of L.pads) {
       const pid = L.pvp ? pad.team : meta.local ?? 0;
@@ -1669,7 +1694,7 @@ export function createRenderer(canvas) {
         ctx.fill();
         ctx.globalAlpha = 1;
       }
-      ctx.fillStyle = "rgba(8,12,20,0.82)";
+      ctx.fillStyle = "rgba(30,40,86,0.82)";
       ctx.beginPath();
       ctx.arc(0, 0, P.r, 0, Math.PI * 2);
       ctx.fill();
@@ -1740,7 +1765,7 @@ export function createRenderer(canvas) {
     ctx.fill();
     ctx.stroke();
     inFrame(pad, B.x, B.y, () => {
-      ctx.fillStyle = building ? "#5aff96" : "rgba(8,12,20,0.78)";
+      ctx.fillStyle = building ? "#5aff96" : "rgba(30,40,86,0.78)";
       ctx.beginPath();
       ctx.arc(0, 0, B.r, 0, Math.PI * 2);
       ctx.fill();
@@ -1761,7 +1786,7 @@ export function createRenderer(canvas) {
     const E = pad.edit;
     const editing = drag && drag.kind === "qedit";
     inFrame(pad, E.x, E.y, () => {
-      ctx.fillStyle = editing ? "#ffd23f" : "rgba(8,12,20,0.78)";
+      ctx.fillStyle = editing ? "#ffd23f" : "rgba(30,40,86,0.78)";
       ctx.beginPath();
       ctx.arc(0, 0, E.r, 0, Math.PI * 2);
       ctx.fill();
@@ -1774,7 +1799,7 @@ export function createRenderer(canvas) {
     const Rz = pad.reset;
     const anyEdit = !!nearestEditedWall(g, p, 30);
     inFrame(pad, Rz.x, Rz.y, () => {
-      ctx.fillStyle = "rgba(8,12,20,0.78)";
+      ctx.fillStyle = "rgba(30,40,86,0.78)";
       ctx.beginPath();
       ctx.arc(0, 0, Rz.r, 0, Math.PI * 2);
       ctx.fill();
@@ -1795,7 +1820,7 @@ export function createRenderer(canvas) {
         const active = i === p.slot;
         const tier = TIER_COLOR[gun.def.tier];
         const s = r.h / 34; // text scale relative to the solo-mode slot
-        ctx.fillStyle = active ? "rgba(20,28,44,0.92)" : "rgba(8,12,20,0.6)";
+        ctx.fillStyle = active ? "rgba(52,68,140,0.92)" : "rgba(30,40,86,0.6)";
         rr(ctx, r.x, r.y, r.w, r.h, 8 * u * s);
         ctx.fill();
         ctx.strokeStyle = active ? tier : "rgba(255,255,255,0.15)";
@@ -1837,7 +1862,7 @@ export function createRenderer(canvas) {
     // BUILD toggle (sits over the attack stick, from its player's point of view)
     const on = mode !== "combat";
     inFrame(pad, B.x, B.y, () => {
-      ctx.fillStyle = on ? "#5aff96" : "rgba(8,12,20,0.75)";
+      ctx.fillStyle = on ? "#5aff96" : "rgba(30,40,86,0.75)";
       ctx.beginPath();
       ctx.arc(0, 0, B.r, 0, Math.PI * 2);
       ctx.fill();
@@ -1867,7 +1892,7 @@ export function createRenderer(canvas) {
         const active = i === p.slot;
         const tier = TIER_COLOR[gun.def.tier];
         const s = r.h / 34; // text scale relative to the solo-mode slot
-        ctx.fillStyle = active ? "rgba(20,28,44,0.92)" : "rgba(8,12,20,0.6)";
+        ctx.fillStyle = active ? "rgba(52,68,140,0.92)" : "rgba(30,40,86,0.6)";
         rr(ctx, r.x, r.y, r.w, r.h, 8 * u * s);
         ctx.fill();
         ctx.strokeStyle = active ? tier : "rgba(255,255,255,0.15)";
@@ -1903,7 +1928,7 @@ export function createRenderer(canvas) {
         const r = frameRect(slots[0]);
         const s = r.h / 34;
         const editing = mode === "edit";
-        ctx.fillStyle = editing ? "#ffd23f" : "rgba(8,12,20,0.75)";
+        ctx.fillStyle = editing ? "#ffd23f" : "rgba(30,40,86,0.75)";
         rr(ctx, r.x, r.y, r.w, r.h, 8 * u * s);
         ctx.fill();
         ctx.strokeStyle = "#ffd23f";
@@ -1918,7 +1943,7 @@ export function createRenderer(canvas) {
         const r = frameRect(slots[1]);
         const s = r.h / 34;
         const any = !!nearestEditedWall(g, p);
-        ctx.fillStyle = "rgba(8,12,20,0.75)";
+        ctx.fillStyle = "rgba(30,40,86,0.75)";
         rr(ctx, r.x, r.y, r.w, r.h, 8 * u * s);
         ctx.fill();
         ctx.strokeStyle = any ? "#8fd3ff" : "rgba(255,255,255,0.15)";
@@ -1939,7 +1964,11 @@ export function createRenderer(canvas) {
     v.buildStyle = meta.buildStyle || "stick";
     v.local = meta.local ?? 0;
     ctx.setTransform(v.dpr, 0, 0, v.dpr, 0, 0);
-    ctx.fillStyle = "#0b0f18";
+    // backdrop around the arena: a rich indigo gradient, not black
+    const bgGrad = ctx.createLinearGradient(0, 0, v.W, v.H);
+    bgGrad.addColorStop(0, "#2b3a6e");
+    bgGrad.addColorStop(1, "#3a2a66");
+    ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, v.W, v.H);
     if (!v.floor || v.floorTeams !== (g.numTeams || 2) || v.floorTheme !== ((g.world.map && g.world.map.theme) || "arena")) buildFloor(g.world, g.numTeams || 2);
 
